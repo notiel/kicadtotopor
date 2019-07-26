@@ -1,4 +1,6 @@
 .*
 __*
 data/
+mans/
 !/.gitignore
+*.txt
