@@ -23,9 +23,11 @@ class Layer:
     name: str
     layer_type: str
 
+
 @dataclass
 class FpText:
     text_type: TextType
+    text: str
     layer: Layer
     coords: Tuple[float, float]
 
@@ -59,7 +61,7 @@ class FpPad:
 
 @dataclass
 class Module:
-    name: str
+    footprint: str
     layer: Layer
     coords: Coords
     descr: str
@@ -68,8 +70,8 @@ class Module:
     lines: List[FpLine]
     pads: List[FpPad]
 
+
 @dataclass
 class PCB:
     layers: List[Layer]
     modules: List[Module]
-

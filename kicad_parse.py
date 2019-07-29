@@ -1,10 +1,11 @@
-from pyparsing import OneOrMore, nestedExpr, Dict
-from typing import Dict, Any, List
+from pyparsing import OneOrMore, nestedExpr
+from typing import Dict, Any, List, Union
 import pprint
 
 from pcb_structure import *
 
-def list_to_dict(data: list) -> dict:
+
+def list_to_dict(data: List) -> Dict[str, Any]:
     """
 
     :param data:
@@ -40,20 +41,31 @@ def get_dict_by_key(data: List[Dict[str, Any]], key: str) -> Dict[str, Any]:
     :return: dict with given key
     """
     for d in data:
-        if key in d.keys():
+        if isinstance(d, dict) and key in d.keys():
             return d
     return {}
 
-# def upgrade_lists_in_dict(data: Dict[str, any]):
-#     """
-#
-#    :param data:
-#    :return:
-#    """
-#    for key in data.keys():
-#        if isinstance(data[key], list):
-#            new = {}
 
+def get_all_dicts_by_key(data: List[Dict[str, Any]], key: str) -> List[Dict[str, Any]]:
+    """
+    find all dicts in a list with selected key
+    :param key: key to find
+    :param data: list with dicts
+    :return: dicts with given key
+    """
+    res: List[Dict[str, Any]] = list()
+    for d in data:
+        if isinstance(d, dict) and key in d.keys():
+            res.append(d)
+    return res
+
+
+def create_module(data: List[Union[str, Dict[str, Any]]]) -> Module:
+    """
+    creates PCB Kicad module from data list
+    :param data: list with module fields
+    :return:
+    """
 
 def get_layers(data: Dict[str, Any]) -> List[Layer]:
     """
@@ -87,6 +99,27 @@ if __name__ == '__main__':
     print(data)
     layers = get_layers(data)
     pcb = PCB(layers, list())
+    for module in get_all_dicts_by_key(data['kicad_pcb'], 'module'):
+        m_data = module['module']
+        footprint = m_data[0]
+        layer = get_dict_by_key(m_data, 'layer')['layer']
+        coords = get_dict_by_key(m_data, 'at')['at']
+        smd: bool = True if get_dict_by_key(m_data, 'attr')['attr'] == 'smd' else False
+        texts: FpText = list()
+        for text in get_all_dicts_by_key(m_data, 'fp_text'):
+            fp_text = text['fp_text']
+            if fp_text[0] == 'reference':
+                text_type = TextType.reference
+            elif fp_text[0] == 'value':
+                text_type = TextType.value
+            else:
+                text_type = TextType.user
+            caption: str = fp_text[1]
+            coords: Coords = Coords((fp_text[2]['at'][0], fp_text[2]['at'][1]))
+            layer: str = fp_text[3]['layer']
+            texts.append(FpText(text_type=text_type, text=caption, coords=coords, layer=layer))
+        print(footprint, coords, layer, smd, texts)
+
 
     pass
 
