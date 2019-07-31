@@ -35,7 +35,7 @@ class FpText:
 @dataclass
 class FpLine:
     start: Coords
-    End: Coords
+    end: Coords
     layer: Layer
     width: float
 
@@ -50,10 +50,10 @@ class FpPos:
 class FpPad:
     pad_id: str
     smd: bool
+    drill: float
     pad_type: PadType
     center: FpPos
     size: Coords
-    drill: int
     layers: List[Layer]
     net_id: int
     net_name: str
