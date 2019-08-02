@@ -3,27 +3,27 @@ from typing import Dict, Any, List, Union
 import pprint
 
 from pcb_structure import *
+import create_topor
 
-
-def list_to_dict(data: List) -> Dict[str, Any]:
+def list_to_dict(pcb_data: List) -> Dict[str, Any]:
     """
 
-    :param data:
+    :param pcb_data:
     :return:
     """
     res = {}
-    if not data or len(data) < 2:
+    if not pcb_data or len(pcb_data) < 2:
         return res
-    if len(data) == 2:
-        res[data[0]] = data[1]
-        if not isinstance(res[data[0]], list):
+    if len(pcb_data) == 2:
+        res[pcb_data[0]] = pcb_data[1]
+        if not isinstance(res[pcb_data[0]], list):
             try:
-                res[data[0]] = float(res[data[0]])
+                res[pcb_data[0]] = float(res[pcb_data[0]])
             except ValueError:
                 pass
     else:
-        res[data[0]] = data[1:]
-    current_data = res[data[0]]
+        res[pcb_data[0]] = pcb_data[1:]
+    current_data = res[pcb_data[0]]
     if isinstance(current_data, list):
         for word in current_data:
             if isinstance(word, list):
@@ -33,40 +33,40 @@ def list_to_dict(data: List) -> Dict[str, Any]:
     return res
 
 
-def get_dict_by_key(data: List[Dict[str, Any]], key: str) -> Dict[str, Any]:
+def get_dict_by_key(pcb_data: List[Dict[str, Any]], key: str) -> Dict[str, Any]:
     """
     find a dict in a list with selected key
     :param key: key to find
-    :param data: list with dicts
+    :param pcb_data: list with dicts
     :return: dict with given key
     """
-    for d in data:
+    for d in pcb_data:
         if isinstance(d, dict) and key in d.keys():
             return d
     return {}
 
 
-def get_all_dicts_by_key(data: List[Dict[str, Any]], key: str) -> List[Dict[str, Any]]:
+def get_all_dicts_by_key(pcb_data: List[Dict[str, Any]], key: str) -> List[Dict[str, Any]]:
     """
     find all dicts in a list with selected key
     :param key: key to find
-    :param data: list with dicts
+    :param pcb_data: list with dicts
     :return: dicts with given key
     """
     res: List[Dict[str, Any]] = list()
-    for d in data:
+    for d in pcb_data:
         if isinstance(d, dict) and key in d.keys():
             res.append(d)
     return res
 
 
-def create_module(module: List[Union[str, Dict[str, Any]]]) -> Module:
+def create_module(module_dict: Dict[str, Any]) -> Module:
     """
     creates PCB Kicad module from data list
-    :param data: list with module fields
+    :param module_dict: list with module fields
     :return:
     """
-    m_data = module['module']
+    m_data = module_dict['module']
     footprint = m_data[0]
     layer = get_dict_by_key(m_data, 'layer')['layer']
     coords = get_dict_by_key(m_data, 'at')['at']
@@ -80,17 +80,17 @@ def create_module(module: List[Union[str, Dict[str, Any]]]) -> Module:
     return Module(footprint=footprint, layer=layer, coords=coords, smd=smd, texts=texts, lines=lines, pads=pads)
 
 
-def get_layers(data: Dict[str, Any]) -> List[Layer]:
+def get_layers(layer_data: Dict[str, Any]) -> List[Layer]:
     """
     get layers from kicad pcb file
-    :param data:
+    :param layer_data:
     :return:
     """
     try:
-        layers = data['kicad_pcb']
-        layers = get_dict_by_key(layers, 'layers')
+        l_data = layer_data['kicad_pcb']
+        l_data = get_dict_by_key(l_data, 'layers')
         res: List[Layer] = list()
-        for layer in layers['layers']:
+        for layer in l_data['layers']:
             layer_data = list(layer.values())[0]
             new_layer = Layer(name=layer_data[0], layer_type=layer_data[1])
             res.append(new_layer)
@@ -101,15 +101,15 @@ def get_layers(data: Dict[str, Any]) -> List[Layer]:
         print("Wrong file structure, unable to get layers")
 
 
-def get_texts(m_data: Dict[str, Any]) -> List[FpText]:
+def get_texts(m_data: List[Dict[str, Any]]) -> List[FpText]:
     """
     gets texts for module
-    :param data: module data
+    :param m_data: module data
     :return: list of FpText
     """
     texts: List[FpText] = list()
-    for text in get_all_dicts_by_key(m_data, 'fp_text'):
-        fp_text = text['fp_text']
+    for text_data in get_all_dicts_by_key(m_data, 'fp_text'):
+        fp_text = text_data['fp_text']
         if fp_text[0] == 'reference':
             text_type = TextType.reference
         elif fp_text[0] == 'value':
@@ -123,7 +123,7 @@ def get_texts(m_data: Dict[str, Any]) -> List[FpText]:
     return texts
 
 
-def get_lines(m_data: Dict[str, Any]) -> List[FpLine]:
+def get_lines(m_data: List[Dict[str, Any]]) -> List[FpLine]:
     """
     get lines data for module
     :param m_data: module data
@@ -141,7 +141,7 @@ def get_lines(m_data: Dict[str, Any]) -> List[FpLine]:
     return lines
 
 
-def get_pads(m_data: Dict[str, Any]) -> List[FpPad]:
+def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
     """
     gets list of pads for module
     :param m_data: dict with module
@@ -155,18 +155,21 @@ def get_pads(m_data: Dict[str, Any]) -> List[FpPad]:
         drill = 0 if smd else fp_pad[2]
         ind = 2 if smd else 3
         if fp_pad[ind] == 'rect':
-            pad_type =PadType.rect
+            pad_type = PadType.rect
         elif fp_pad[ind] == 'circle':
             pad_type = PadType.circle
         else:
             pad_type = PadType.oval
-        pos = FpPos(pos=(fp_pad[ind+1][0], fp_pad[ind+1][1]), rot=fp_pad[ind+1][2])
-        size = (fp_pad[ind+2][0], fp_pad[ind+2][1])
-        layers = fp_pad[ind+3]
-        net_id = fp_pad[ind+4][0]
-        net_name = fp_pad[ind+4][1]
-        new_pad = FpPad(pad_id=pad_id, smd=smd, drill=drill, pad_type=pad_type, pos=pos, size=size, layers=layers,
-                        net_id=net_id, net_name=net_name)
+        pos_data = get_dict_by_key(fp_pad, 'at')['at']
+        pos = FpPos(pos=(pos_data[0], pos_data[1]), rot=pos_data[2] if len(pos_data) == 3 else -1)
+        size_data = get_dict_by_key(fp_pad, 'size')
+        size = (size_data['size'][0], size_data['size'][1]) if size_data else (0, 0)
+        pad_layers = get_dict_by_key(fp_pad, 'layers')['layers']
+        net = get_dict_by_key(fp_pad, 'net')
+        net_id = get_dict_by_key(fp_pad, 'net')['net'][0] if net else ""
+        net_name = get_dict_by_key(fp_pad, 'net')['net'][1] if net else ""
+        new_pad = FpPad(pad_id=pad_id, smd=smd, drill=drill, pad_type=pad_type, center=pos, size=size,
+                        layers=pad_layers, net_id=net_id, net_name=net_name)
         pads.append(new_pad)
     return pads
 
@@ -181,9 +184,7 @@ if __name__ == '__main__':
         f.write(text)
     print(data)
     layers = get_layers(data)
-    pcb = PCB(layers, list())
+    pcb = PCB(layers=layers, modules=list())
     for module in get_all_dicts_by_key(data['kicad_pcb'], 'module'):
-
-        print(footprint, coords, layer, smd, texts)
-    pass
-
+        pcb.modules.append(create_module(module))
+    create_topor.create_topor(pcb)
