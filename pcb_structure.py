@@ -39,6 +39,14 @@ class FpLine:
     layer: Layer
     width: float
 
+@dataclass
+class FpArc:
+    start: Coords
+    end: Coords
+    angle: float
+    layer: Layer
+    width: float
+
 
 @dataclass
 class FpPos:
@@ -74,3 +82,4 @@ class Module:
 class PCB:
     layers: List[Layer]
     modules: List[Module]
+    edge: List[Union[FpLine, FpArc]]
