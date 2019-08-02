@@ -1,9 +1,9 @@
 from dataclasses import dataclass
-from typing import Tuple, List
+from typing import Tuple, List, Union
 from enum import Enum
 
 
-Coords = Tuple[int, int]
+Coords = Tuple[float, float]
 
 
 class TextType(Enum):

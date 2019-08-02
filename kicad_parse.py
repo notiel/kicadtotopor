@@ -75,7 +75,7 @@ def create_module(module_dict: Dict[str, Any]) -> Module:
     attr = get_dict_by_key(m_data, 'attr')
     smd: bool = True if (attr and attr['attr'] == 'smd') else False
     texts = get_texts(m_data)
-    lines = get_lines(m_data)
+    lines = get_lines(m_data, 'fp_line')
     pads = get_pads(m_data)
     return Module(footprint=footprint, layer=layer, coords=coords, smd=smd, texts=texts, lines=lines, pads=pads)
 
@@ -123,15 +123,16 @@ def get_texts(m_data: List[Dict[str, Any]]) -> List[FpText]:
     return texts
 
 
-def get_lines(m_data: List[Dict[str, Any]]) -> List[FpLine]:
+def get_lines(m_data: List[Dict[str, Any]], line_tag: str) -> List[FpLine]:
     """
     get lines data for module
+    :param line_tag: fp_line or gr_line
     :param m_data: module data
     :return: list of lines
     """
     lines: List[FpLine] = list()
-    for line in get_all_dicts_by_key(m_data, 'fp_line'):
-        fp_line = line['fp_line']
+    for line in get_all_dicts_by_key(m_data, line_tag):
+        fp_line = line[line_tag]
         start: Coords = get_dict_by_key(fp_line, 'start')['start']
         end: Coords = get_dict_by_key(fp_line, 'end')['end']
         layer: str = get_dict_by_key(fp_line, 'layer')['layer']
@@ -139,6 +140,26 @@ def get_lines(m_data: List[Dict[str, Any]]) -> List[FpLine]:
         new_line = FpLine(start=start, end=end, layer=layer, width=width)
         lines.append(new_line)
     return lines
+
+
+def get_arcs(m_data: List[Dict[str, Any]], arc_tag: str) -> List[FpArc]:
+    """
+    get lines data for module
+    :param line_tag: fp_line or gr_line
+    :param m_data: module data
+    :return: list of lines
+    """
+    arcs: List[FpArc] = list()
+    for arc in get_all_dicts_by_key(m_data, arc_tag):
+        fp_arc = arc[arc_tag]
+        start: Coords = get_dict_by_key(fp_arc, 'start')['start']
+        end: Coords = get_dict_by_key(fp_arc, 'end')['end']
+        angle: float = get_dict_by_key(fp_arc)
+        layer: str = get_dict_by_key(fp_arc, 'layer')['layer']
+        width: float = get_dict_by_key(fp_arc, 'width')['width']
+        new_arc = FpArc(start=start, end=end, angle=angle, layer=layer, width=width)
+        arcs.append(new_arc)
+    return arcs
 
 
 def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
@@ -174,6 +195,37 @@ def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
     return pads
 
 
+def get_edges(pcb_data: List[Dict[str, Any]]) -> List[Union[FpLine, FpArc]]:
+    """
+    get edge data
+    :param rcb_data: list with arcs
+    :return: FpLine and FpArc list
+    """
+    edges: List[Union[FpLine, FpArc]] = list()
+    for elem in pcb_data:
+        if isinstance(elem, dict) and 'gr_line' in elem.keys():
+            fp_line = elem['gr_line']
+            start: Coords = get_dict_by_key(fp_line, 'start')['start']
+            end: Coords = get_dict_by_key(fp_line, 'end')['end']
+            layer: str = get_dict_by_key(fp_line, 'layer')['layer']
+            width: float = get_dict_by_key(fp_line, 'width')['width']
+            new_line = FpLine(start=start, end=end, layer=layer, width=width)
+            edges.append(new_line)
+        if isinstance(elem, dict) and 'gr_arc' in elem.keys():
+            fp_arc = elem['gr_arc']
+            start: Coords = get_dict_by_key(fp_arc, 'start')['start']
+            end: Coords = get_dict_by_key(fp_arc, 'end')['end']
+            angle: float = get_dict_by_key(fp_arc, 'angle')
+            layer: str = get_dict_by_key(fp_arc, 'layer')['layer']
+            width: float = get_dict_by_key(fp_arc, 'width')['width']
+            new_arc = FpArc(start=start, end=end, angle=angle, layer=layer, width=width)
+            edges.append(new_arc)
+
+    edges = [edge for edge in edges if edge.layer == '"Edge.Cuts"']
+    print(edges)
+    return edges
+
+
 if __name__ == '__main__':
     inputdata = open("data/FireFly.kicad_pcb").read()
     data_parse = OneOrMore(nestedExpr()).parseString(inputdata)
@@ -184,7 +236,8 @@ if __name__ == '__main__':
         f.write(text)
     print(data)
     layers = get_layers(data)
-    pcb = PCB(layers=layers, modules=list())
+    edges: List[Union[FpArc, FpLine]] = get_edges(data['kicad_pcb'])
+    pcb = PCB(layers=layers, modules=list(), edge=edges)
     for module in get_all_dicts_by_key(data['kicad_pcb'], 'module'):
         pcb.modules.append(create_module(module))
     create_topor.create_topor(pcb)

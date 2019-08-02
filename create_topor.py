@@ -1,6 +1,7 @@
 from lxml import etree
 QMTag = etree._Element
 from pcb_structure import *
+import math
 
 version = '1.2.1'
 program = 'TopoR Lite 7.0.18707'
@@ -16,6 +17,33 @@ layers = [{'name': 'Paste Top', 'type': "Paste", 'thickness': "0"},
 
 used_fp = []
 
+
+def get_end_point(arc: FpArc)->Coords:
+    """
+    gets end point for arc using center and angle
+    :param arc: arc data
+    :return: end point by x and y
+    """
+    x: float = arc.c.start[0]
+    y: float = arc.start[1]
+    ang: float = arc.angle
+    x_c: float = arc.end[0]
+    y_c: float = arc.end[1]
+    r: float = math.sqrt((x - x_c) * (x - x_c) + (y - y_c) * (y - y_c))
+    start_angle: float = math.atan2(y - y_c, x - x_c) / math.pi * 180
+    stop_angle: float = start_angle + ang
+    if ang > 0:
+        da: float = 0.1
+        cond = lambda a: a < stop_angle
+    else:
+        da = -delta
+        cond = lambda a: a > stop_angle
+    a = start_angle
+    while cond(a):
+        x = x_c + r * math.cos(a / 180 * math.pi)
+        y = y_c + r * math.sin(a / 180 * math.pi)
+        a += da
+    return (x, y)
 
 def create_topor(pcb: PCB):
     """
@@ -59,6 +87,8 @@ def create_topor(pcb: PCB):
                 _ = etree.SubElement(tag_line, 'Dot', x=line.start[0], y=line.start[1])
                 _ = etree.SubElement(tag_line, 'Dot', x=line.end[0], y=line.end[1])
             used_fp.append(module.footprint)
+
+
 
 
     xml_tree =etree.ElementTree(topor)
