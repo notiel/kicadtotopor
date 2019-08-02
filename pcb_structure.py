@@ -64,7 +64,6 @@ class Module:
     footprint: str
     layer: Layer
     coords: Coords
-    descr: str
     smd: bool
     texts: List[FpText]
     lines: List[FpLine]
