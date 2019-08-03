@@ -2,6 +2,8 @@ from lxml import etree
 QMTag = etree._Element
 from pcb_structure import *
 import math
+import random
+import string
 
 version = '1.2.1'
 program = 'TopoR Lite 7.0.18707'
@@ -17,33 +19,6 @@ layers = [{'name': 'Paste Top', 'type': "Paste", 'thickness': "0"},
 
 used_fp = []
 
-
-def get_end_point(arc: FpArc)->Coords:
-    """
-    gets end point for arc using center and angle
-    :param arc: arc data
-    :return: end point by x and y
-    """
-    x: float = arc.c.start[0]
-    y: float = arc.start[1]
-    ang: float = arc.angle
-    x_c: float = arc.end[0]
-    y_c: float = arc.end[1]
-    r: float = math.sqrt((x - x_c) * (x - x_c) + (y - y_c) * (y - y_c))
-    start_angle: float = math.atan2(y - y_c, x - x_c) / math.pi * 180
-    stop_angle: float = start_angle + ang
-    if ang > 0:
-        da: float = 0.1
-        cond = lambda a: a < stop_angle
-    else:
-        da = -delta
-        cond = lambda a: a > stop_angle
-    a = start_angle
-    while cond(a):
-        x = x_c + r * math.cos(a / 180 * math.pi)
-        y = y_c + r * math.sin(a / 180 * math.pi)
-        a += da
-    return (x, y)
 
 def create_topor(pcb: PCB):
     """
@@ -81,15 +56,55 @@ def create_topor(pcb: PCB):
             details = etree.SubElement(footprint, "Details")
             for line in module.lines:
                 detail = etree.SubElement(details, 'Detail', lineWidth=str(line.width))
-                layer_name = 'F.Cu_outline' if line.layer == 'F.Silks' else 'B.Cu_outline'
+                layer_name = 'F.Cu_outline' if line.layer.name == 'F.Silks' else 'B.Cu_outline'
                 _ = etree.SubElement(detail, 'LayerRef', name=layer_name)
                 tag_line = etree.SubElement(detail, 'Line')
                 _ = etree.SubElement(tag_line, 'Dot', x=line.start[0], y=line.start[1])
                 _ = etree.SubElement(tag_line, 'Dot', x=line.end[0], y=line.end[1])
             used_fp.append(module.footprint)
 
+    components = etree.SubElement(library, "Components")
+    for module in pcb.modules:
+        ref = [text.text for text in module.texts if text.text_type == TextType.reference][0]
+        component = etree.SubElement(components, 'Component', name=ref)
+        pins = etree.SubElement(component, 'Pins')
+        pin = etree.SubElement(pins,
+                               "Pin", pinNum="1", name="1", pinSymName="1", pinEqual="0", gate="-1", gateEqual="0")
 
+    packages = etree.SubElement(library, "Packages")
+    for module in pcb.modules:
+        ref = [text.text for text in module.texts if text.text_type == TextType.reference][0]
+        package = etree.SubElement(packages, 'Package')
+        _ = etree.SubElement(package, 'ComponentRef', name=ref)
+        _ = etree.SubElement(package, 'FootprintRef', name=module.footprint)
+        _ = etree.SubElement(package, 'Pinpack', pinNum="1", padNum="1")
 
+    constr = etree.SubElement(topor, "Constructive", version='1.2')
+    board = etree.SubElement(constr, 'BoardOutline')
+    contour = etree.SubElement(board, 'Contour')
+    shape = etree.SubElement(contour, 'Shape')
+    polyline = etree.SubElement(shape, 'Polyline')
+    _ = etree.SubElement(polyline, "Start", x=str(pcb.edge[0].start[0]), y=str(pcb.edge[0].start[1]))
+    for edge in pcb.edge:
+        if isinstance(edge, FpLine):
+            line = etree.SubElement(polyline, "SegmentLine")
+            _ = etree.SubElement(line, 'End', x=edge.end[0], y=edge.end[1])
+        if isinstance(edge, FpArc):
+            arc = etree.SubElement(polyline, "SegmentArcByAngle", angle=str(edge.angle))
+            _ = etree.SubElement(arc, 'End',  x=str(edge.end[0]), y=str(edge.end[1]))
+
+    components_on_board = etree.SubElement(topor, 'ComponentsOnBoard', version='1.3')
+    components = etree.SubElement(components_on_board, "Components")
+    for module in pcb.modules:
+        ref = [text.text for text in module.texts if text.text_type == TextType.reference][0]
+        comp_inst = etree.SubElement(components, 'CompInstance', name=ref,
+                                     uniqueId=''.join(random.choice(string.ascii_letters) for x in range(7)),
+                                     side='Top' if 'F.Cu' in module.layer else 'Bottom',
+                                     angle=str(module.coords[2]) if len(module.coords) > 2 else '0',
+                                     )
+        _ = etree.SubElement(comp_inst, "ComponentRef", name=ref)
+        _ = etree.SubElement(comp_inst, 'FootprintRef', name=module.footprint)
+        _ = etree.SubElement(comp_inst, 'Org', x=str(module.coords[0]), y=str(module.coords[1]))
 
     xml_tree =etree.ElementTree(topor)
     xml_tree.write('test.fst', xml_declaration=True, encoding="UTF-8", pretty_print=True)
