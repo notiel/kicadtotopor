@@ -1,16 +1,17 @@
 from lxml import etree
-QMTag = etree._Element
 from pcb_structure import *
 import math
 import random
 import string
+
+QMTag = etree._Element
 
 version = '1.2.1'
 program = 'TopoR Lite 7.0.18707'
 
 layers = [{'name': 'Paste Top', 'type': "Paste", 'thickness': "0"},
           {'name': 'Mask Top', 'type': "Mask", 'thickness': "0"},
-          {'name': 'F.Cu outline', 'type': "Assy", 'compsOutline': "on"},
+          {'name': 'F.Cu_outline', 'type': "Assy", 'compsOutline': "on"},
           {'name': 'F.Cu', 'type': "Signal", 'thickness': "0"},
           {'name': 'B.Cu', 'type': "Signal", 'thickness': "0"},
           {'name': 'B.Cu_outline', 'type': "Assy", 'compsOutline': "on"},
@@ -47,6 +48,12 @@ def create_topor(pcb: PCB):
     stack = etree.SubElement(tag_layers, "StackUpLayers")
     for layer in layers:
         _ = etree.SubElement(stack, 'Layer', **layer)
+
+    textstyles = etree.SubElement(topor, "TextStyles", version="1.0")
+    _ = etree.SubElement(textstyles, "TextStyle", name="Default", fontName="", height="1")
+    _ = etree.SubElement(textstyles, "TextStyle", name="President", fontName="", height="1")
+
+
     library = etree.SubElement(topor, 'LocalLibrary', version="1.1")
     footprints = etree.SubElement(library, "Footprints")
 
@@ -56,11 +63,19 @@ def create_topor(pcb: PCB):
             details = etree.SubElement(footprint, "Details")
             for line in module.lines:
                 detail = etree.SubElement(details, 'Detail', lineWidth=str(line.width))
-                layer_name = 'F.Cu_outline' if line.layer.name == 'F.Silks' else 'B.Cu_outline'
+                layer_name = 'F.Cu_outline' # if line.layer.name == 'F.SilkS'  else 'B.Cu_outline'
                 _ = etree.SubElement(detail, 'LayerRef', name=layer_name)
                 tag_line = etree.SubElement(detail, 'Line')
                 _ = etree.SubElement(tag_line, 'Dot', x=line.start[0], y=line.start[1])
                 _ = etree.SubElement(tag_line, 'Dot', x=line.end[0], y=line.end[1])
+            for circle in module.circles:
+                detail = etree.SubElement(details, 'Detail', lineWidth=str(circle.width))
+                layer_name = 'F.Cu_outline'  # if line.layer.name == 'F.SilkS' else 'B.Cu_outline'
+                _ = etree.SubElement(detail, 'LayerRef', name=layer_name)
+                diameter = 2*((float(circle.end[0]) - float(circle.center[0]))**2 + (float(circle.end[1]) - float(circle.center[1])**2))**0.5
+                tag_circle = etree.SubElement(detail, "Circle", diameter=str(diameter))
+                _ = etree.SubElement(tag_circle, "Center", x=str(circle.center[0]), y=str(circle.center[1]))
+
             used_fp.append(module.footprint)
 
     components = etree.SubElement(library, "Components")
@@ -99,14 +114,23 @@ def create_topor(pcb: PCB):
         ref = [text.text for text in module.texts if text.text_type == TextType.reference][0]
         comp_inst = etree.SubElement(components, 'CompInstance', name=ref,
                                      uniqueId=''.join(random.choice(string.ascii_letters) for x in range(7)),
-                                     side='Top' if 'F.Cu' in module.layer else 'Bottom',
+                                     side='Top' if 'F.Cu' in module.layer.name else 'Bottom',
                                      angle=str(module.coords[2]) if len(module.coords) > 2 else '0',
                                      )
         _ = etree.SubElement(comp_inst, "ComponentRef", name=ref)
         _ = etree.SubElement(comp_inst, 'FootprintRef', name=module.footprint)
         _ = etree.SubElement(comp_inst, 'Org', x=str(module.coords[0]), y=str(module.coords[1]))
 
-    xml_tree =etree.ElementTree(topor)
+        attributes = etree.SubElement(comp_inst, 'Attributes')
+        attribute = etree.SubElement(attributes, 'Attribute', type="RefDes")
+        visible = 'off' if any([text in ref for text in ['Logo', 'RP', 'Test', 'HOLE']]) else 'on'
+        label = etree.SubElement(attribute, "Label", mirror='on' if'B.Cu' in module.layer.name else 'off', visible=visible)
+        ref_coords = [text.coords for text in module.texts if text.text_type == TextType.reference][0]
+        _ = etree.SubElement(label, "LayerRef", name='F.Cu_outline' if 'F.Cu' in module.layer.name else 'B.Cu_outline')
+        _ = etree.SubElement(label, "TextStyleRef", name="Default")
+        _ = etree.SubElement(label, 'Org', x=str(ref_coords[0]), y=str(ref_coords[1]))
+
+    xml_tree = etree.ElementTree(topor)
     xml_tree.write('test.fst', xml_declaration=True, encoding="UTF-8", pretty_print=True)
 
 

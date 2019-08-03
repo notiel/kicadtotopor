@@ -40,6 +40,14 @@ class FpLine:
     width: float
 
 @dataclass
+class FpCircle:
+    center: Coords
+    end: Coords
+    layer: Layer
+    width: float
+
+
+@dataclass
 class FpArc:
     start: Coords
     end: Coords
@@ -75,6 +83,7 @@ class Module:
     smd: bool
     texts: List[FpText]
     lines: List[FpLine]
+    circles: List[FpCircle]
     pads: List[FpPad]
 
 
@@ -83,3 +92,4 @@ class PCB:
     layers: List[Layer]
     modules: List[Module]
     edge: List[Union[FpLine, FpArc]]
+    texts: List[FpText]

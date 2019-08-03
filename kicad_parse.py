@@ -127,8 +127,10 @@ def create_module(module_dict: Dict[str, Any]) -> Module:
     """
     m_data = module_dict['module']
     footprint = m_data[0].replace('"',  "")
-    layer = get_dict_by_key(m_data, 'layer')['layer']
+    layer = convert_to_layers(get_dict_by_key(m_data, 'layer')['layer'])[0]
     coords = get_dict_by_key(m_data, 'at')['at']
+    if len(coords) == 3 and "B." in layer.name:
+        coords[2] = (float(coords[2]) + 180) % 360
     coords[1] = str(-1*float(coords[1]))
     # coords[0] = float(coords[0])
     # coords[1] = float(coords[1])
@@ -136,8 +138,10 @@ def create_module(module_dict: Dict[str, Any]) -> Module:
     smd: bool = True if (attr and attr['attr'] == 'smd') else False
     texts = get_texts(m_data)
     lines = get_lines(m_data, 'fp_line')
+    circles = get_circles(m_data, 'fp_circle')
     pads = get_pads(m_data)
-    return Module(footprint=footprint, layer=layer, coords=coords, smd=smd, texts=texts, lines=lines, pads=pads)
+    return Module(footprint=footprint, layer=layer, coords=coords, smd=smd, texts=texts, lines=lines, pads=pads,
+                  circles=circles)
 
 
 def get_layers(layer_data: Dict[str, Any]) -> List[Layer]:
@@ -161,9 +165,10 @@ def get_layers(layer_data: Dict[str, Any]) -> List[Layer]:
         print("Wrong file structure, unable to get layers")
 
 
-def get_texts(m_data: List[Dict[str, Any]]) -> List[FpText]:
+def get_texts(m_data: List[Dict[str, Any]], text_tag: str) -> List[FpText]:
     """
     gets texts for module
+    :param text_tag: tag for find text
     :param m_data: module data
     :return: list of FpText
     """
@@ -202,6 +207,27 @@ def get_lines(m_data: List[Dict[str, Any]], line_tag: str) -> List[FpLine]:
         new_line = FpLine(start=start, end=end, layer=layer, width=width)
         lines.append(new_line)
     return lines
+
+
+def get_circles(m_data: List[Dict[str, Any]], circle_tag: str) -> List[FpCircle]:
+    """
+    get lines data for module
+    :param circle_tag: fp_line or gr_line
+    :param m_data: module data
+    :return: list of lines
+    """
+    circles: List[FpCircle] = list()
+    for circle in get_all_dicts_by_key(m_data, circle_tag):
+        fp_circle = circle[circle_tag]
+        center: Coords = get_dict_by_key(fp_circle, 'center')['center']
+        center[1] = str(-1 * float(center[1]))
+        end: Coords = get_dict_by_key(fp_circle, 'end')['end']
+        end[1] = str(-1 * float(end[1]))
+        layer: Layer = convert_to_layers(get_dict_by_key(fp_circle, 'layer')['layer'])[0]
+        width: float = get_dict_by_key(fp_circle, 'width')['width']
+        new_circle = FpCircle(center=center, end=end, layer=layer, width=width)
+        circles.append(new_circle)
+    return circles
 
 
 def get_arcs(m_data: List[Dict[str, Any]], arc_tag: str) -> List[FpArc]:
