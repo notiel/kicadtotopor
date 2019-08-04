@@ -5,11 +5,11 @@ from enum import Enum
 
 Coords = Tuple[float, float]
 
-
 class TextType(Enum):
     reference = 0
     value = 1
     user = 2
+    simple = 3
 
 
 class PadType(Enum):
@@ -30,6 +30,7 @@ class FpText:
     text: str
     layer: Layer
     coords: Tuple[float, float]
+    angle: float
 
 
 @dataclass
@@ -38,6 +39,14 @@ class FpLine:
     end: Coords
     layer: Layer
     width: float
+
+
+@dataclass
+class FpPoly:
+    layer: Layer
+    width: float
+    points: List[Coords]
+
 
 @dataclass
 class FpCircle:
@@ -82,8 +91,7 @@ class Module:
     coords: Coords
     smd: bool
     texts: List[FpText]
-    lines: List[FpLine]
-    circles: List[FpCircle]
+    figures: List[Union[FpLine, FpCircle, FpPoly, FpArc]]
     pads: List[FpPad]
 
 

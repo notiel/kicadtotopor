@@ -132,16 +132,15 @@ def create_module(module_dict: Dict[str, Any]) -> Module:
     if len(coords) == 3 and "B." in layer.name:
         coords[2] = (float(coords[2]) + 180) % 360
     coords[1] = str(-1*float(coords[1]))
-    # coords[0] = float(coords[0])
-    # coords[1] = float(coords[1])
     attr = get_dict_by_key(m_data, 'attr')
     smd: bool = True if (attr and attr['attr'] == 'smd') else False
-    texts = get_texts(m_data)
-    lines = get_lines(m_data, 'fp_line')
-    circles = get_circles(m_data, 'fp_circle')
+    texts = get_texts(m_data, 'fp_text')
+    figures: List[Union[FpPoly, FpCircle, FpArc, FpLine]] = get_lines(m_data, 'fp_line')
+    figures.extend(get_circles(m_data, 'fp_circle'))
     pads = get_pads(m_data)
-    return Module(footprint=footprint, layer=layer, coords=coords, smd=smd, texts=texts, lines=lines, pads=pads,
-                  circles=circles)
+    figures.extend(get_polys(m_data, 'fp_poly'))
+    figures.extend(get_arcs(m_data, 'fp_arc'))
+    return Module(footprint=footprint, layer=layer, coords=coords, smd=smd, texts=texts, pads=pads, figures=figures)
 
 
 def get_layers(layer_data: Dict[str, Any]) -> List[Layer]:
@@ -158,7 +157,6 @@ def get_layers(layer_data: Dict[str, Any]) -> List[Layer]:
             layer_data = list(layer.values())[0]
             new_layer = Layer(name=layer_data[0], layer_type=layer_data[1])
             res.append(new_layer)
-        print(res)
         return res
 
     except KeyError:
@@ -173,18 +171,24 @@ def get_texts(m_data: List[Dict[str, Any]], text_tag: str) -> List[FpText]:
     :return: list of FpText
     """
     texts: List[FpText] = list()
-    for text_data in get_all_dicts_by_key(m_data, 'fp_text'):
-        fp_text = text_data['fp_text']
-        if fp_text[0] == 'reference':
-            text_type = TextType.reference
-        elif fp_text[0] == 'value':
-            text_type = TextType.value
+    for text_data in get_all_dicts_by_key(m_data, text_tag):
+        fp_text = text_data[text_tag]
+        if text_tag == 'fp_text':
+            if fp_text[0] == 'reference':
+                text_type = TextType.reference
+            elif fp_text[0] == 'value':
+                text_type = TextType.value
+            else:
+                text_type = TextType.user
+            caption: str = fp_text[1].replace('"', "")
         else:
-            text_type = TextType.user
-        caption: str = fp_text[1].replace('"', "")
-        coords: Coords = (fp_text[2]['at'][0], str(-1*(float(fp_text[2]['at'][1]))))
-        layer: Layer = convert_to_layers(fp_text[3]['layer'])[0]
-        texts.append(FpText(text_type=text_type, text=caption, coords=coords, layer=layer))
+            text_type = TextType.simple
+            caption: str = fp_text[0].replace('"', "")
+        coords_data = get_dict_by_key(fp_text, 'at')['at']
+        coords: Coords = (coords_data[0], str(-1*(float(coords_data[1]))))
+        angle = coords_data[2] if len(coords_data) > 2 else '0'
+        layer: Layer = convert_to_layers(get_dict_by_key(fp_text, 'layer')['layer'])[0]
+        texts.append(FpText(text_type=text_type, text=caption, coords=coords, layer=layer, angle=angle))
     return texts
 
 
@@ -227,7 +231,31 @@ def get_circles(m_data: List[Dict[str, Any]], circle_tag: str) -> List[FpCircle]
         width: float = get_dict_by_key(fp_circle, 'width')['width']
         new_circle = FpCircle(center=center, end=end, layer=layer, width=width)
         circles.append(new_circle)
+    # print(circles)
     return circles
+
+
+def get_polys(m_data: List[Dict[str, Any]], poly_tag: str) -> List[FpPoly]:
+    """
+    get data of polygon
+    :param m_data: data
+    :param poly_tag: tag for poly
+    :return:
+    """
+    polys = get_all_dicts_by_key(m_data, poly_tag)
+    res_polys: List[FpPoly] = list()
+    if polys:
+        for poly in polys:
+            poly_data = poly[poly_tag]
+            layer: Layer = convert_to_layers(get_dict_by_key(poly_data, 'layer')['layer'])[0]
+            width: str = get_dict_by_key(poly_data, 'width')['width']
+            pts_data: List[Dict[str, Any]] = get_dict_by_key(poly_data, 'pts')['pts']
+            points: List[Coords] = list()
+            for p in pts_data:
+                point = (p['xy'][0], str(-1*float(p['xy'][1])))
+                points.append(point)
+            res_polys.append(FpPoly(layer=layer, width=width, points=points))
+    return res_polys
 
 
 def get_arcs(m_data: List[Dict[str, Any]], arc_tag: str) -> List[FpArc]:
@@ -244,7 +272,7 @@ def get_arcs(m_data: List[Dict[str, Any]], arc_tag: str) -> List[FpArc]:
         start[1] = str(-1 * float(start[1]))
         end: Coords = get_dict_by_key(fp_arc, 'end')['end']
         end[1] = str(-1 * float(end[1]))
-        angle: float = -1*float(get_dict_by_key(fp_arc, "angle"))
+        angle: float = -1*float(get_dict_by_key(fp_arc, "angle")['angle'])
         layer: Layer = convert_to_layers(get_dict_by_key(fp_arc, 'layer')['layer'])[0]
         width: float = get_dict_by_key(fp_arc, 'width')['width']
         new_arc = FpArc(start=start, end=end, angle=angle, layer=layer, width=width)
@@ -299,7 +327,7 @@ def get_edges(pcb_data: List[Dict[str, Any]]) -> List[Union[FpLine, FpArc]]:
             start[1] = str(-1 * float(start[1]))
             end: Coords = get_dict_by_key(fp_line, 'end')['end']
             end[1] = str(-1 * float(end[1]))
-            layer: Layer= convert_to_layers(get_dict_by_key(fp_line, 'layer')['layer'])[0]
+            layer: Layer = convert_to_layers(get_dict_by_key(fp_line, 'layer')['layer'])[0]
             width: float = get_dict_by_key(fp_line, 'width')['width']
             new_line = FpLine(start=start, end=end, layer=layer, width=width)
             pcb_edges.append(new_line)
@@ -342,10 +370,10 @@ if __name__ == '__main__':
     text: str = pprint.pformat(data, indent=0)
     with open("dump.txt", "w") as f:
         f.write(text)
-    print(data)
     layers = get_layers(data)
     edges: List[Union[FpArc, FpLine]] = get_edges(data['kicad_pcb'])
-    pcb = PCB(layers=layers, modules=list(), edge=edges)
+    texts = get_texts(data['kicad_pcb'], 'gr_text')
+    pcb = PCB(layers=layers, modules=list(), edge=edges, texts=texts)
     for module in get_all_dicts_by_key(data['kicad_pcb'], 'module'):
         pcb.modules.append(create_module(module))
     create_topor.create_topor(pcb)
