@@ -19,6 +19,35 @@ layers = [{'name': 'Paste Top', 'type': "Paste", 'thickness': "0"},
           {'name': 'Mask Bottom', 'type': "Mask", 'thickness': "0"}]
 
 used_fp = []
+exclude_names = ['Logo', 'RP', 'TEST', 'HOLE', "CONN", "BUTTON", "EEPROM", "ANT", "REF", "LED", "HOLDER", "SWITCH"]
+
+def create_detail(details: QMTag, figure: FpFigure):
+    """
+    creates tag structure for detail
+    :param details: parent tag
+    :param figure: figure for detail
+    :return:
+    """
+    detail = etree.SubElement(details, 'Detail', lineWidth=str(figure.width))
+    layer_name = 'F.Cu_outline'  # if line.layer.name == 'F.SilkS'  else 'B.Cu_outline'
+    _ = etree.SubElement(detail, 'LayerRef', name=layer_name)
+    if isinstance(figure, FpLine):
+        tag_line = etree.SubElement(detail, 'Line')
+        _ = etree.SubElement(tag_line, 'Dot', x=figure.start[0], y=figure.start[1])
+        _ = etree.SubElement(tag_line, 'Dot', x=figure.end[0], y=figure.end[1])
+    elif isinstance(figure, FpCircle):
+        diameter = round(2 * ((float(figure.end[0]) - float(figure.center[0])) ** 2 +
+                              (float(figure.end[1]) - float(figure.center[1])) ** 2) ** 0.5, 2)
+        tag_circle = etree.SubElement(detail, "Circle", diameter=str(diameter))
+        _ = etree.SubElement(tag_circle, "Center", x=str(figure.center[0]), y=str(figure.center[1]))
+    elif isinstance(figure, FpPoly):
+        poly_tag = etree.SubElement(detail, "Polygon")
+        for point in figure.points:
+            _ = etree.SubElement(poly_tag, "Dot", x=point[0], y=point[1])
+    elif isinstance(figure, FpArc):
+        arc = etree.SubElement(detail, "ArcByAngle", angle=figure.angle)
+        _ = etree.SubElement(arc, "Start", x=figure.start[0], y=figure.start[1])
+        _ = etree.SubElement(arc, "End", x=figure.end[0], y=figure.end[1])
 
 
 def create_topor(pcb: PCB):
@@ -50,7 +79,7 @@ def create_topor(pcb: PCB):
         _ = etree.SubElement(stack, 'Layer', **layer)
 
     textstyles = etree.SubElement(topor, "TextStyles", version="1.0")
-    _ = etree.SubElement(textstyles, "TextStyle", name="Default", fontName="", height="1")
+    _ = etree.SubElement(textstyles, "TextStyle", name="Default", fontName="", height="0.7")
     _ = etree.SubElement(textstyles, "TextStyle", name="President", fontName="President", height="2")
 
     library = etree.SubElement(topor, 'LocalLibrary', version="1.1")
@@ -62,22 +91,7 @@ def create_topor(pcb: PCB):
             details = etree.SubElement(footprint, "Details")
             for figure in module.figures:
                 if 'SilkS' in figure.layer.name:
-                    detail = etree.SubElement(details, 'Detail', lineWidth=str(figure.width))
-                    layer_name = 'F.Cu_outline'  # if line.layer.name == 'F.SilkS'  else 'B.Cu_outline'
-                    _ = etree.SubElement(detail, 'LayerRef', name=layer_name)
-                    if isinstance(figure, FpLine):
-                        tag_line = etree.SubElement(detail, 'Line')
-                        _ = etree.SubElement(tag_line, 'Dot', x=figure.start[0], y=figure.start[1])
-                        _ = etree.SubElement(tag_line, 'Dot', x=figure.end[0], y=figure.end[1])
-                    elif isinstance(figure, FpCircle):
-                        diameter = round(2*((float(figure.end[0]) - float(figure.center[0]))**2 +
-                                            (float(figure.end[1])- float(figure.center[1]))**2)**0.5, 2)
-                        tag_circle = etree.SubElement(detail, "Circle", diameter=str(diameter))
-                        _ = etree.SubElement(tag_circle, "Center", x=str(figure .center[0]), y=str(figure.center[1]))
-                    elif isinstance(figure, FpPoly):
-                        poly_tag = etree.SubElement(detail, "Polygon")
-                        for point in figure.points:
-                            _ = etree.SubElement(poly_tag, "Dot", x=point[0], y=point[1])
+                    create_detail(details, figure)
             used_fp.append(module.footprint)
 
     components = etree.SubElement(library, "Components")
@@ -85,8 +99,8 @@ def create_topor(pcb: PCB):
         ref = [text.text for text in module.texts if text.text_type == TextType.reference][0]
         component = etree.SubElement(components, 'Component', name=ref)
         pins = etree.SubElement(component, 'Pins')
-        pin = etree.SubElement(pins,
-                               "Pin", pinNum="1", name="1", pinSymName="1", pinEqual="0", gate="-1", gateEqual="0")
+        _ = etree.SubElement(pins,
+                            "Pin", pinNum="1", name="1", pinSymName="1", pinEqual="0", gate="-1", gateEqual="0")
 
     packages = etree.SubElement(library, "Packages")
     for module in pcb.modules:
@@ -95,6 +109,7 @@ def create_topor(pcb: PCB):
         _ = etree.SubElement(package, 'ComponentRef', name=ref)
         _ = etree.SubElement(package, 'FootprintRef', name=module.footprint)
         _ = etree.SubElement(package, 'Pinpack', pinNum="1", padNum="1")
+
 
     constr = etree.SubElement(topor, "Constructive", version='1.2')
     board = etree.SubElement(constr, 'BoardOutline')
@@ -119,11 +134,16 @@ def create_topor(pcb: PCB):
 
     components_on_board = etree.SubElement(topor, 'ComponentsOnBoard', version='1.3')
     components = etree.SubElement(components_on_board, "Components")
+    used_names = list()
     for module in pcb.modules:
+        name = [text.text for text in module.texts if text.text_type == TextType.value][0]
         ref = [text.text for text in module.texts if text.text_type == TextType.reference][0]
-        comp_inst = etree.SubElement(components, 'CompInstance', name=ref,
+        while name in used_names:
+            name += " "
+        used_names.append(name)
+        comp_inst = etree.SubElement(components, 'CompInstance', name=name,
                                      uniqueId=''.join(random.choice(string.ascii_letters) for x in range(7)),
-                                     side='Top' if 'F.Cu' in module.layer.name else 'Bottom',
+                                     side='Top' if 'F.' in module.layer.name else 'Bottom',
                                      angle=str(module.coords[2]) if len(module.coords) > 2 else '0',
                                      )
         _ = etree.SubElement(comp_inst, "ComponentRef", name=ref)
@@ -131,13 +151,31 @@ def create_topor(pcb: PCB):
         _ = etree.SubElement(comp_inst, 'Org', x=str(module.coords[0]), y=str(module.coords[1]))
 
         attributes = etree.SubElement(comp_inst, 'Attributes')
+
         attribute = etree.SubElement(attributes, 'Attribute', type="RefDes")
-        visible = 'off' if any([text in ref for text in ['Logo', 'RP', 'Test', 'HOLE']]) else 'on'
-        ref_angle = [text.angle for text in module.texts if text.text_type == TextType.reference][0]
-        angle = str(module.coords[2]) if len(module.coords) > 2 else '0'
+        visible = 'off' if any([text in name for text in exclude_names])else 'on'
+        ref_angle = float([text.angle for text in module.texts if text.text_type == TextType.value][0])
+        angle = float(module.coords[2]) if len(module.coords) > 2 else 0
+        if angle == 90:
+            label_angle = 0
+        elif angle == 180:
+            label_angle = angle + ref_angle
+        else:
+            label_angle = (angle + ref_angle) % 180
         label = etree.SubElement(attribute, "Label", mirror='on' if'B.Cu' in module.layer.name else 'off',
-                                 visible=visible, angle=str(float(ref_angle)-float(angle)))
-        ref_coords = [text.coords for text in module.texts if text.text_type == TextType.reference][0]
+                                 visible=visible, angle=str(label_angle))
+        ref_coords = [text.coords for text in module.texts if text.text_type == TextType.value][0]
+        _ = etree.SubElement(label, "LayerRef", name='F.Cu_outline' if 'F.' in module.layer.name else 'B.Cu_outline')
+        _ = etree.SubElement(label, "TextStyleRef", name="Default")
+        _ = etree.SubElement(label, 'Org', x=str(ref_coords[0]), y=str(ref_coords[1]))
+
+        attribute = etree.SubElement(attributes, 'Attribute', type="PartName")
+        visible = 'off' if any([text in name for text in ['Logo', 'RP', 'TEST', 'HOLE']]) else 'on'
+        ref_angle = [text.angle for text in module.texts if text.text_type == TextType.value][0]
+        angle = str(module.coords[2]) if len(module.coords) > 2 else '0'
+        label = etree.SubElement(attribute, "Label", mirror='on' if 'B.Cu' in module.layer.name else 'off',
+                                 visible=visible, angle=str(float(ref_angle) - float(angle)))
+        ref_coords = [text.coords for text in module.texts if text.text_type == TextType.value][0]
         _ = etree.SubElement(label, "LayerRef", name='F.Cu_outline' if 'F.' in module.layer.name else 'B.Cu_outline')
         _ = etree.SubElement(label, "TextStyleRef", name="Default")
         _ = etree.SubElement(label, 'Org', x=str(ref_coords[0]), y=str(ref_coords[1]))

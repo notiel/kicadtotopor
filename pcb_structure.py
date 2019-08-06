@@ -3,7 +3,9 @@ from typing import Tuple, List, Union
 from enum import Enum
 
 
-Coords = Tuple[float, float]
+Coords = List[float]
+FpFigure = Union['FpArc', 'FpPoly', 'FpLine', 'FpCircle']
+
 
 class TextType(Enum):
     reference = 0
@@ -29,7 +31,7 @@ class FpText:
     text_type: TextType
     text: str
     layer: Layer
-    coords: Tuple[float, float]
+    coords: List[float]
     angle: float
 
 
@@ -44,7 +46,7 @@ class FpLine:
 @dataclass
 class FpPoly:
     layer: Layer
-    width: float
+    width: str
     points: List[Coords]
 
 
@@ -91,7 +93,7 @@ class Module:
     coords: Coords
     smd: bool
     texts: List[FpText]
-    figures: List[Union[FpLine, FpCircle, FpPoly, FpArc]]
+    figures: List[FpFigure]
     pads: List[FpPad]
 
 
@@ -101,3 +103,4 @@ class PCB:
     modules: List[Module]
     edge: List[Union[FpLine, FpArc]]
     texts: List[FpText]
+    
