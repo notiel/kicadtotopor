@@ -10,6 +10,23 @@ layer_list = ['F.Cu', 'B.Cu', 'Edge.Cuts', 'F.SilkS', 'B.SilkS', 'F.Mask', 'B.Ma
               'B.Fab', 'F.Fab']
 
 
+def get_settings() -> Dict[str, Any]:
+    """
+    gets settings from config file
+    :return:
+    """
+    settings = dict()
+    with open("config,ini") as file_config:
+        for line in file_config:
+            try:
+                key = line.split(":")[0]
+                value = line.split(":")[1].strip().split() if key == 'invisible_manes' else line.split(":")[1].strip()
+                settings[key] = value
+            except IndexError:
+                pass
+    return settings
+
+
 def get_end_point(arc: FpArc)->Coords:
     """
     gets end point for arc using center and angle
@@ -35,7 +52,7 @@ def get_end_point(arc: FpArc)->Coords:
         x = x_c + r * math.cos(a / 180 * math.pi)
         y = y_c + r * math.sin(a / 180 * math.pi)
         a += da
-    return x, y
+    return [x, y]
 
 
 def list_to_dict(pcb_data: List) -> Dict[str, Any]:
@@ -134,13 +151,14 @@ def create_module(module_dict: Dict[str, Any]) -> Module:
     coords[1] = str(-1*float(coords[1]))
     attr = get_dict_by_key(m_data, 'attr')
     smd: bool = True if (attr and attr['attr'] == 'smd') else False
-    texts = get_texts(m_data, 'fp_text')
+    module_texts = get_texts(m_data, 'fp_text')
     figures: List[Union[FpPoly, FpCircle, FpArc, FpLine]] = get_lines(m_data, 'fp_line')
     figures.extend(get_circles(m_data, 'fp_circle'))
     pads = get_pads(m_data)
     figures.extend(get_polys(m_data, 'fp_poly'))
     figures.extend(get_arcs(m_data, 'fp_arc'))
-    return Module(footprint=footprint, layer=layer, coords=coords, smd=smd, texts=texts, pads=pads, figures=figures)
+    return Module(footprint=footprint, layer=layer, coords=coords, smd=smd,
+                  texts=module_texts, pads=pads, figures=figures, extrapads=list())
 
 
 def get_layers(layer_data: Dict[str, Any]) -> List[Layer]:
@@ -170,7 +188,7 @@ def get_texts(m_data: List[Dict[str, Any]], text_tag: str) -> List[FpText]:
     :param m_data: module data
     :return: list of FpText
     """
-    texts: List[FpText] = list()
+    fp_texts: List[FpText] = list()
     for text_data in get_all_dicts_by_key(m_data, text_tag):
         fp_text = text_data[text_tag]
         if text_tag == 'fp_text':
@@ -188,8 +206,26 @@ def get_texts(m_data: List[Dict[str, Any]], text_tag: str) -> List[FpText]:
         coords: Coords = [coords_data[0], str(-1*(float(coords_data[1])))]
         angle = coords_data[2] if len(coords_data) > 2 else '0'
         layer: Layer = convert_to_layers(get_dict_by_key(fp_text, 'layer')['layer'])[0]
-        texts.append(FpText(text_type=text_type, text=caption, coords=coords, layer=layer, angle=angle))
-    return texts
+        fp_texts.append(FpText(text_type=text_type, text=caption, coords=coords, layer=layer, angle=angle))
+    return fp_texts
+
+
+def create_line(line_data: Dict[str, Any], line_tag: str) -> FpLine:
+    """
+    create line
+    :param line_tag: tag for line
+    :param line_data: dict with line data
+    :return: FpLine object
+    """
+    fp_line = line_data[line_tag]
+    start: Coords = [get_dict_by_key(fp_line, 'start')['start'][0], get_dict_by_key(fp_line, 'start')['start'][1]]
+    start[1] = str(-1 * float(start[1]))
+    end: Coords = [get_dict_by_key(fp_line, 'end')['end'][0], get_dict_by_key(fp_line, 'end')['end'][1]]
+    end[1] = str(-1 * float(end[1]))
+    layer: Layer = convert_to_layers(get_dict_by_key(fp_line, 'layer')['layer'])[0]
+    width: float = get_dict_by_key(fp_line, 'width')['width']
+    new_line = FpLine(start=start, end=end, layer=layer, width=width)
+    return new_line
 
 
 def get_lines(m_data: List[Dict[str, Any]], line_tag: str) -> List[FpLine]:
@@ -201,15 +237,7 @@ def get_lines(m_data: List[Dict[str, Any]], line_tag: str) -> List[FpLine]:
     """
     lines: List[FpLine] = list()
     for line in get_all_dicts_by_key(m_data, line_tag):
-        fp_line = line[line_tag]
-        start: Coords = [get_dict_by_key(fp_line, 'start')['start'][0], get_dict_by_key(fp_line, 'start')['start'][1]]
-        start[1] = str(-1 * float(start[1]))
-        end: Coords = [get_dict_by_key(fp_line, 'end')['end'][0], get_dict_by_key(fp_line, 'end')['end'][1]]
-        end[1] = str(-1 * float(end[1]))
-        layer: Layer = convert_to_layers(get_dict_by_key(fp_line, 'layer')['layer'])[0]
-        width: float = get_dict_by_key(fp_line, 'width')['width']
-        new_line = FpLine(start=start, end=end, layer=layer, width=width)
-        lines.append(new_line)
+        lines.append(create_line(line, line_tag))
     return lines
 
 
@@ -259,6 +287,28 @@ def get_polys(m_data: List[Dict[str, Any]], poly_tag: str) -> List[FpPoly]:
     return res_polys
 
 
+def create_arc(arc_data: Dict[str, Any], arc_tag: str) -> FpArc:
+    """
+    create FpArc object from dict with arc data
+    :param arc_data: dict with arc data
+    :param arc_tag: arc tag
+    :return: FpArc object
+    """
+    fp_arc = arc_data[arc_tag]
+    # end in kicad is start point
+    start: Coords = [get_dict_by_key(fp_arc, 'end')['end'][0], get_dict_by_key(fp_arc, 'end')['end'][1]]
+    start[1] = str(-1 * float(start[1]))
+    end: Coords = [get_dict_by_key(fp_arc, 'start')['start'][0],
+                   get_dict_by_key(fp_arc, 'start')['start'][1]]  # start in kicad is center point
+    end[1] = str(-1 * float(end[1]))
+    angle: float = -1 * float(get_dict_by_key(fp_arc, 'angle')['angle'])
+    layer: Layer = convert_to_layers(get_dict_by_key(fp_arc, 'layer')['layer'])[0]
+    width: float = get_dict_by_key(fp_arc, 'width')['width']
+    new_arc = FpArc(start=start, end=end, angle=angle, layer=layer, width=width)
+    new_arc.end = get_end_point(new_arc)
+    return new_arc
+
+
 def get_arcs(m_data: List[Dict[str, Any]], arc_tag: str) -> List[FpArc]:
     """
     get lines data for module
@@ -268,17 +318,7 @@ def get_arcs(m_data: List[Dict[str, Any]], arc_tag: str) -> List[FpArc]:
     """
     arcs: List[FpArc] = list()
     for arc in get_all_dicts_by_key(m_data, arc_tag):
-        fp_arc = arc[arc_tag]
-        start: Coords = get_dict_by_key(fp_arc, 'start')['start']
-        start[1] = str(-1 * float(start[1]))
-        end: Coords = get_dict_by_key(fp_arc, 'end')['end']
-        end[1] = str(-1 * float(end[1]))
-        angle: float = -1*float(get_dict_by_key(fp_arc, "angle")['angle'])
-        layer: Layer = convert_to_layers(get_dict_by_key(fp_arc, 'layer')['layer'])[0]
-        width: float = get_dict_by_key(fp_arc, 'width')['width']
-        new_arc = FpArc(start=start, end=end, angle=angle, layer=layer, width=width)
-        new_arc.end = get_end_point(new_arc)
-        arcs.append(new_arc)
+        arcs.append(create_arc(arc, arc_tag))
     return arcs
 
 
@@ -288,21 +328,30 @@ def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
     :param m_data: dict with module
     :return: list of pads
     """
+    layer = get_dict_by_key(m_data, 'layer')['layer']
     pads: List[FpPad] = list()
+    used_pads = list()
     for pad in get_all_dicts_by_key(m_data, 'pad'):
         fp_pad = pad['pad']
-        pad_id = fp_pad[0]
-        smd = fp_pad[1] == 'smd'
-        drill = 0 if smd else fp_pad[2]
-        ind = 2 if smd else 3
-        if fp_pad[ind] == 'rect':
+        pad_id = fp_pad[0].replace('"', "")
+        if pad_id in used_pads:
+            count = 1
+            while pad_id+str(count) in used_pads:
+                count += 1
+            pad_id = pad_id+str(count)
+        used_pads.append(pad_id)
+        smd = (fp_pad[1] == 'smd')
+        drill = 0 if smd else get_dict_by_key(fp_pad, "drill")['drill']
+        if fp_pad[2] == 'rect':
             pad_type = PadType.rect
-        elif fp_pad[ind] == 'circle':
+        elif fp_pad[2] == 'circle':
             pad_type = PadType.circle
         else:
             pad_type = PadType.oval
         pos_data = get_dict_by_key(fp_pad, 'at')['at']
-        pos = FpPos(pos=[pos_data[0], -1*float(pos_data[1])], rot=pos_data[2] if len(pos_data) == 3 else -1)
+        pos = FpPos(pos=[pos_data[0], -1.0*float(pos_data[1])], rot=(pos_data[2]) if len(pos_data) == 3 else 0)
+        if 'B.' in layer:
+            pos.pos[1] = -1*pos.pos[1]
         size_data = get_dict_by_key(fp_pad, 'size')
         size = [size_data['size'][0], size_data['size'][1]] if size_data else [0, 0]
         pad_layers: List[Layer] = convert_to_layers(get_dict_by_key(fp_pad, 'layers')['layers'])
@@ -324,30 +373,9 @@ def get_edges(pcb_data: List[Dict[str, Any]]) -> List[Union[FpLine, FpArc]]:
     pcb_edges: List[Union[FpLine, FpArc]] = list()
     for elem in pcb_data:
         if isinstance(elem, dict) and 'gr_line' in elem.keys():
-            fp_line = elem['gr_line']
-            start: Coords = [get_dict_by_key(fp_line, 'start')['start'][0],
-                             get_dict_by_key(fp_line, 'start')['start'][1]]
-            start[1] = str(-1 * float(start[1]))
-            end: Coords = [get_dict_by_key(fp_line, 'end')['end'][0], get_dict_by_key(fp_line, 'end')['end'][1]]
-            end[1] = str(-1 * float(end[1]))
-            layer: Layer = convert_to_layers(get_dict_by_key(fp_line, 'layer')['layer'])[0]
-            width: float = get_dict_by_key(fp_line, 'width')['width']
-            new_line = FpLine(start=start, end=end, layer=layer, width=width)
-            pcb_edges.append(new_line)
+            pcb_edges.append(create_line(elem, 'gr_line'))
         if isinstance(elem, dict) and 'gr_arc' in elem.keys():
-            fp_arc = elem['gr_arc']
-            # end in kicad is _starting_ point
-            start: Coords = [get_dict_by_key(fp_arc, 'end')['end'][0], get_dict_by_key(fp_arc, 'end')['end'][1]]
-            start[1] = str(-1 * float(start[1]))
-            end: Coords = [get_dict_by_key(fp_arc, 'start')['start'][0],
-                           get_dict_by_key(fp_arc, 'start')['start'][1]]     # start in kicad is center point
-            end[1] = str(-1 * float(end[1]))
-            angle: float = -1*float(get_dict_by_key(fp_arc, 'angle')['angle'])
-            layer: Layer = convert_to_layers(get_dict_by_key(fp_arc, 'layer')['layer'])[0]
-            width: float = get_dict_by_key(fp_arc, 'width')['width']
-            new_arc = FpArc(start=start, end=end, angle=angle, layer=layer, width=width)
-            new_arc.end = get_end_point(new_arc)
-            pcb_edges.append(new_arc)
+            pcb_edges.append(create_arc(elem, 'gr_arc'))
 
     new_edges = [edge for edge in pcb_edges if edge.layer.name == 'Edge.Cuts']
 
@@ -386,7 +414,7 @@ if __name__ == '__main__':
     if extra_figures:
         extra_ref: FpText = FpText(TextType.reference, "ExtraSilks", Layer("F.SilkS", "user"), [0, 0], 0)
         extra_value: FpText = FpText(TextType.value, "ExtraSilks", Layer("F.SilkS", "user"), [0, 0], 0)
-        extra_module: Module = Module("ExtraSilks", Layer("F.Silks", "user"), [0, 0], 0, [extra_ref, extra_value],
-                                      extra_figures, list())
-    pcb.modules.append(extra_module)
-    create_topor.create_topor(pcb)
+        extra_module: Module = Module("ExtraSilks", Layer("F.Silks", "user"), [0, 0], False, [extra_ref, extra_value],
+                                      extra_figures, list(), list())
+        pcb.modules.append(extra_module)
+    create_topor.create_topor(pcb, get_settings())

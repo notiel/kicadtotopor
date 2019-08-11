@@ -95,6 +95,7 @@ class Module:
     texts: List[FpText]
     figures: List[FpFigure]
     pads: List[FpPad]
+    extrapads: List[str]
 
 
 @dataclass
@@ -103,4 +104,3 @@ class PCB:
     modules: List[Module]
     edge: List[Union[FpLine, FpArc]]
     texts: List[FpText]
-    
