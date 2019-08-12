@@ -18,6 +18,7 @@ class PadType(Enum):
     circle = 0
     rect = 1
     oval = 2
+    custom = 3
 
 
 @dataclass
@@ -84,6 +85,7 @@ class FpPad:
     layers: List[Layer]
     net_id: int
     net_name: str
+    extra_points: List[Coords]
 
 
 @dataclass

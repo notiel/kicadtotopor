@@ -346,8 +346,10 @@ def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
             pad_type = PadType.rect
         elif fp_pad[2] == 'circle':
             pad_type = PadType.circle
-        else:
+        elif fp_pad[2] == 'oval':
             pad_type = PadType.oval
+        else:
+            pad_type = PadType.custom
         pos_data = get_dict_by_key(fp_pad, 'at')['at']
         pos = FpPos(pos=[pos_data[0], -1.0*float(pos_data[1])], rot=(pos_data[2]) if len(pos_data) == 3 else 0)
         if 'B.' in layer:
@@ -359,7 +361,21 @@ def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
         net_id = get_dict_by_key(fp_pad, 'net')['net'][0] if net else ""
         net_name = get_dict_by_key(fp_pad, 'net')['net'][1] if net else ""
         new_pad = FpPad(pad_id=pad_id, smd=smd, drill=drill, pad_type=pad_type, center=pos, size=size,
-                        layers=pad_layers, net_id=net_id, net_name=net_name)
+                        layers=pad_layers, net_id=net_id, net_name=net_name, extra_points=list())
+        if pad_type == PadType.custom:
+            pad_data = get_dict_by_key(fp_pad, 'primitives')['primitives']
+            for extra_pad in pad_data:
+                if isinstance(extra_pad, dict):
+                    print(extra_pad)
+                    if 'gr_poly' in extra_pad.keys():
+                        points = get_dict_by_key(extra_pad['gr_poly'], 'pts')['pts']
+                    elif 'pts' in extra_pad.keys():
+                        points = extra_pad['pts']
+                    else:
+                        continue
+                    for point in points:
+                        new_pad.extra_points.append([point['xy'][0], str(-1*float(point['xy'][1]))])
+            print(new_pad.extra_points)
         pads.append(new_pad)
     return pads
 

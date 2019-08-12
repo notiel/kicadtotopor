@@ -93,10 +93,38 @@ def create_header(topor: FstTag):
     _ = etree.SubElement(header, 'Units', dist='mm', time="ps")
 
 
+def create_layers(topor: FstTag):
+    """
+    creates layers tags
+    :param topor: tag to add layers
+    :return:
+    """
+    tag_layers = etree.SubElement(topor, 'Layers', version="1.1")
+    stack = etree.SubElement(tag_layers, "StackUpLayers")
+    for layer in layers:
+        _ = etree.SubElement(stack, 'Layer', **layer)
+
+def create_textstyles(topor: FstTag, settings: Dict[str, Any]):
+    """
+    creates text styles
+    :param topor: tag to add styles
+    :param settings: config fonts settings
+    :return:
+    """
+    textstyles = etree.SubElement(topor, "TextStyles", version="1.0")
+    _ = etree.SubElement(textstyles, "TextStyle", name="Default", fontName=settings.setdefault("font_default", ""),
+                         height=settings.setdefault("font_size", "1"))
+    _ = etree.SubElement(textstyles, "TextStyle", name="Logo", fontName=settings.setdefault("font_logo", ""),
+                         height=settings.setdefault("logo_size", "3"))
+
+
 def create_extra_pads(padstacks: FstTag, module: Module, ref: str, used_extra_pads: List[str]):
     """
     creates extra pads from .Cu
-    :param padstack:
+    :param used_extra_pads: list of also used names for extra pads
+    :param ref: name of module
+    :param module: module with pad data
+    :param padstacks: tag to add info
     :return:
     """
     for figure in module.figures:
@@ -120,35 +148,20 @@ def create_extra_pads(padstacks: FstTag, module: Module, ref: str, used_extra_pa
                 used_extra_pads.append(name)
 
 
-def create_topor(pcb: PCB, settings: Dict[str, Any]):
+def create_pads(library: FstTag, pcb: PCB):
     """
-    creates pcb topor file
-    :param pcb: structure with data
+    creates padsstack tags
+    :param library: tag to add padstacks
+    :param pcb: pcb data
     :return:
     """
-    topor = etree.Element('TopoR_PCB_File')
-    create_header(topor)
-
-    tag_layers = etree.SubElement(topor, 'Layers', version="1.1")
-    stack = etree.SubElement(tag_layers, "StackUpLayers")
-    for layer in layers:
-        _ = etree.SubElement(stack, 'Layer', **layer)
-
-    textstyles = etree.SubElement(topor, "TextStyles", version="1.0")
-    _ = etree.SubElement(textstyles, "TextStyle", name="Default", fontName=settings.setdefault("font_default", ""),
-                         height=settings.setdefault("font_size", "1"))
-    _ = etree.SubElement(textstyles, "TextStyle", name="Logo", fontName=settings.setdefault("font_logo", ""),
-                         height=settings.setdefault("logo_size", "3"))
-
-    library = etree.SubElement(topor, 'LocalLibrary', version="1.1")
-
     padstacks = etree.SubElement(library, "Padstacks")
     used_extra_pads = list()
     for module in pcb.modules:
         ref = [text.text for text in module.texts if text.text_type == TextType.reference][0]
         for pad in module.pads:
             if pad.smd:
-                padstack = etree.SubElement(padstacks, "Padstack", name=ref+' ' + pad.pad_id, type="SMD",
+                padstack = etree.SubElement(padstacks, "Padstack", name=ref + ' ' + pad.pad_id, type="SMD",
                                             metallized="on")
             else:
                 padstack = etree.SubElement(padstacks, "Padstack", name=ref + ' ' + pad.pad_id,
@@ -176,9 +189,30 @@ def create_topor(pcb: PCB, settings: Dict[str, Any]):
                         height = pad.size[1]
                         pad_tag = etree.SubElement(pads_tag, "PadRect", width=width, height=height)
                         _ = etree.SubElement(pad_tag, "LayerTypeRef", type=layer_type)
+                    if pad.pad_type == PadType.custom:
+                        print(pad.extra_points)
+                        pad_tag = etree.SubElement(pads_tag, "PadPoly")
+                        _ = etree.SubElement(pad_tag, "LayerTypeRef", type="Signal")
+                        for point in pad.extra_points:
+                            _ = etree.SubElement(pad_tag, "Dot", x=point[0], y=point[1])
+
                     used_layers.append(layer_type)
         create_extra_pads(padstacks, module, ref, used_extra_pads)
 
+
+def create_topor(pcb: PCB, settings: Dict[str, Any]):
+    """
+    creates pcb topor file
+    :param settings: data with config settings
+    :param pcb: structure with data
+    :return:
+    """
+    topor = etree.Element('TopoR_PCB_File')
+    create_header(topor)
+    create_layers(topor)
+    create_textstyles(topor, settings)
+    library = etree.SubElement(topor, 'LocalLibrary', version="1.1")
+    create_pads(library, pcb)
 
     footprints = etree.SubElement(library, "Footprints")
     for module in pcb.modules:
@@ -186,8 +220,8 @@ def create_topor(pcb: PCB, settings: Dict[str, Any]):
         footprint = etree.SubElement(footprints, 'Footprint', name=module.footprint + ' ' + ref)
         pads = etree.SubElement(footprint, "Pads")
         for pad in module.pads:
-            pad_tag = etree.SubElement(pads, "Pad", padNum=str(module.pads.index(pad)), name = pad.pad_id,
-                                       angle=str(pad.center.rot))
+            angle = str(pad.center.rot) if (pad.pad_type != PadType.custom and int(pad.center.rot) % 90 == 0) else '0'
+            pad_tag = etree.SubElement(pads, "Pad", padNum=str(module.pads.index(pad)), name=pad.pad_id, angle=angle)
             _ = etree.SubElement(pad_tag, "PadstackRef", name=ref+' ' + pad.pad_id)
             _ = etree.SubElement(pad_tag, "Org", x=str(pad.center.pos[0]), y=str(pad.center.pos[1]))
         for pad in module.extrapads:
@@ -208,8 +242,8 @@ def create_topor(pcb: PCB, settings: Dict[str, Any]):
         component = etree.SubElement(components, 'Component', name=ref)
         pins = etree.SubElement(component, 'Pins')
         for pad in module.pads:
-            _ = etree.SubElement(pins, "Pin", pinNum=str(module.pads.index(pad)), name=pad.pad_id, pinSymName=pad.pad_id,
-                                 pinEqual="0", gate="-1", gateEqual="0")
+            _ = etree.SubElement(pins, "Pin", pinNum=str(module.pads.index(pad)), name=pad.pad_id,
+                                 pinSymName=pad.pad_id, pinEqual="0", gate="-1", gateEqual="0")
 
     packages = etree.SubElement(library, "Packages")
     for module in pcb.modules:
@@ -280,10 +314,3 @@ def create_topor(pcb: PCB, settings: Dict[str, Any]):
 
     xml_tree = etree.ElementTree(topor)
     xml_tree.write('test.fst', xml_declaration=True, encoding="UTF-8", pretty_print=True)
-
-
-
-
-
-
-
