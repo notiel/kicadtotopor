@@ -132,4 +132,5 @@ class PCB:
     edge: List[Union[FpLine, FpArc]]
     texts: List[FpText]
     nets: List[Net]
+    net_groups: List[NetGroup]
 

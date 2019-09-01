@@ -358,11 +358,13 @@ def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
         size_data = get_dict_by_key(fp_pad, 'size')
         size = [size_data['size'][0], size_data['size'][1]] if size_data else [0, 0]
         pad_layers: List[Layer] = convert_to_layers(get_dict_by_key(fp_pad, 'layers')['layers'])
-        net = get_dict_by_key(fp_pad, 'net')
-        net_id = get_dict_by_key(fp_pad, 'net')['net'][0] if net else ""
-        net_name = get_dict_by_key(fp_pad, 'net')['net'][1] if net else ""
+        net_data = get_dict_by_key(fp_pad, 'net')
+        net_id = get_dict_by_key(fp_pad, 'net')['net'][0] if net_data else ""
+        net_name = get_dict_by_key(fp_pad, 'net')['net'][1] if net_data else ""
         new_pad = FpPad(pad_id=pad_id, smd=smd, drill=drill, pad_type=pad_type, center=pos, size=size,
                         layers=pad_layers, net_id=net_id, net_name=net_name, extra_points=list())
+        if net_data:
+            net = [net for net in nets if net.net_id == net_id]
         if pad_type == PadType.custom:
             pad_data = get_dict_by_key(fp_pad, 'primitives')['primitives']
             for extra_pad in pad_data:
@@ -410,18 +412,45 @@ def get_edges(pcb_data: List[Dict[str, Any]]) -> List[Union[FpLine, FpArc]]:
     return sorted_edges
 
 
-def get_nets(data: Dict[str, Any]):
+def get_nets(data: List[Dict[str, Any]]) -> List[Net]:
     """
     get jusy list of nets with their id and name
-    :param data:
-    :return:
+    :param data: data of pcb
+    :return: list of nets
     """
     nets_data = get_all_dicts_by_key(data, 'net')
     nets: List[Net] = list()
-    for net in nets:
-        new_net = Net(net_name=net['net'][1].replace('""', ''), net_id=net['net'][0], contact=list(), segments=list())
-    nets.append(new_net)
+    for net in nets_data:
+        new_net = Net(net_name=net['net'][1].replace('""', ''), net_id=net['net'][0], contacts=list(), segments=list())
+        nets.append(new_net)
     return nets
+
+
+def get_net_groups(data: List[Dict[str, Any]], nets: List[Net]) -> List[NetGroup]:
+    """
+    get net groups data and assigns net groups to nets
+    :param data: pcb data
+    :param nets: list of nets
+    :return: list of netgroups
+    """
+    group_data = get_all_dicts_by_key(data, 'net_class')
+    groups: List[NetGroup] = list()
+    for group in group_data:
+        name = group['net_class'][0]
+        clearance = get_dict_by_key(group['net_class'], 'clearance')
+        width = get_dict_by_key(group['net_class'], 'width')
+        via_dia = get_dict_by_key(group['net_class'], 'via_dia')
+        via_drill = get_dict_by_key(group['net_class'], 'via_drill')
+        new_group = NetGroup(name=name, clearance=clearance, trace_width=width, via_dia=via_dia, via_drill=via_drill)
+        groups.append(new_group)
+        nets_data = get_all_dicts_by_key(group['net_class'], 'add_net')
+        for add_net in nets_data:
+            for net in nets:
+                if net.net_name == add_net['add_net'].replace('"',''):
+                    net.group = name
+    return groups
+
+
 
 
 def main(filename):
@@ -435,12 +464,13 @@ def main(filename):
     layers = get_layers(data)
     edges: List[Union[FpArc, FpLine]] = get_edges(data['kicad_pcb'])
     texts = get_texts(data['kicad_pcb'], 'gr_text')
-    get_nets(data['kicad_pcb'])
+    nets = get_nets(data['kicad_pcb'])
+    net_groups = get_net_groups(data['kicad_pcb'], nets)
     extra_figures: List[Union[FpLine, FpCircle, FpPoly, FpArc]] = get_arcs(data['kicad_pcb'], 'gr_arc')
     extra_figures.extend((get_polys(data['kicad_pcb'], 'gr_poly')))
     extra_figures.extend(get_lines(data['kicad_pcb'], 'gr_line'))
     extra_figures.extend(get_circles(data['kicad_pcb'], 'gr_circle'))
-    pcb = PCB(layers=layers, modules=list(), edge=edges, texts=texts)
+    pcb = PCB(layers=layers, modules=list(), edge=edges, texts=texts, nets=nets, net_groups=net_groups  )
     for module in get_all_dicts_by_key(data['kicad_pcb'], 'module'):
         pcb.modules.append(create_module(module))
     if extra_figures:
