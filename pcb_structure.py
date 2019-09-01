@@ -101,8 +101,35 @@ class Module:
 
 
 @dataclass
+class NetGroup:
+    name: str
+    clearance: float
+    trace_width: float
+    via_dia: float
+    via_drill: float
+
+
+@dataclass
+class Segment:
+    start: float
+    end: float
+    width: float
+
+
+@dataclass
+class Net:
+    net_id: int
+    net_name: str
+    contacts: List[Tuple[Module, int]]
+    segments: List[Segment]
+    group: str = ""
+
+
+@dataclass
 class PCB:
     layers: List[Layer]
     modules: List[Module]
     edge: List[Union[FpLine, FpArc]]
     texts: List[FpText]
+    nets: List[Net]
+

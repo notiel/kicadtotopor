@@ -69,10 +69,11 @@ def get_label_angle(module: Module, label_type: TextType) -> float:
     return label_angle
 
 
-def create_header(topor: FstTag):
+def create_header(topor: FstTag, filename: str):
     """
     creates header
-    :param topor:
+    :param filename: filename
+    :param topor: tag to add
     :return:
     """
     header = etree.SubElement(topor, "Header")
@@ -89,7 +90,7 @@ def create_header(topor: FstTag):
     tag_original.text = 'TopoR PCB'
     tag_original = etree.SubElement(header, "OriginalFile")
     # to do add filename
-    tag_original.text = r"C:\Users\juice\Downloads\Ostranna\Scripts\topor\data\FireFly.kicad_pcb"
+    tag_original.text = filename
     _ = etree.SubElement(header, 'Units', dist='mm', time="ps")
 
 
@@ -159,6 +160,7 @@ def create_pads(library: FstTag, pcb: PCB):
     used_extra_pads = list()
     for module in pcb.modules:
         ref = [text.text for text in module.texts if text.text_type == TextType.reference][0]
+        print(ref)
         for pad in module.pads:
             if pad.smd:
                 padstack = etree.SubElement(padstacks, "Padstack", name=ref + ' ' + pad.pad_id, type="SMD",
@@ -200,15 +202,16 @@ def create_pads(library: FstTag, pcb: PCB):
         create_extra_pads(padstacks, module, ref, used_extra_pads)
 
 
-def create_topor(pcb: PCB, settings: Dict[str, Any]):
+def create_topor(filename: str, pcb: PCB, settings: Dict[str, Any]):
     """
     creates pcb topor file
+    :param filename: name of file
     :param settings: data with config settings
     :param pcb: structure with data
     :return:
     """
     topor = etree.Element('TopoR_PCB_File')
-    create_header(topor)
+    create_header(topor, filename)
     create_layers(topor)
     create_textstyles(topor, settings)
     library = etree.SubElement(topor, 'LocalLibrary', version="1.1")
@@ -313,4 +316,4 @@ def create_topor(pcb: PCB, settings: Dict[str, Any]):
         _ = etree.SubElement(label, 'Org', x=str(ref_coords[0]), y=str(ref_coords[1]))
 
     xml_tree = etree.ElementTree(topor)
-    xml_tree.write('test.fst', xml_declaration=True, encoding="UTF-8", pretty_print=True)
+    xml_tree.write(filename + '.fst', xml_declaration=True, encoding="UTF-8", pretty_print=True)

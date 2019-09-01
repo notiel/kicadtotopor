@@ -2,12 +2,13 @@ from pyparsing import OneOrMore, nestedExpr
 from typing import Dict, Any, List, Union
 import pprint
 import math
+import sys
 
 from pcb_structure import *
 import create_topor
 
 layer_list = ['F.Cu', 'B.Cu', 'Edge.Cuts', 'F.SilkS', 'B.SilkS', 'F.Mask', 'B.Mask', 'Dwgs.User', 'F.Paste', 'B.Paste',
-              'B.Fab', 'F.Fab']
+              'B.Fab', 'F.Fab', 'F.CrtYd', 'B.CrtYd', 'F.Adhes', 'B.Adhes']
 
 
 def get_settings() -> Dict[str, Any]:
@@ -330,7 +331,7 @@ def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
     """
     layer = get_dict_by_key(m_data, 'layer')['layer']
     pads: List[FpPad] = list()
-    used_pads = list()
+    used_pads = [""]
     for pad in get_all_dicts_by_key(m_data, 'pad'):
         fp_pad = pad['pad']
         pad_id = fp_pad[0].replace('"', "")
@@ -409,8 +410,22 @@ def get_edges(pcb_data: List[Dict[str, Any]]) -> List[Union[FpLine, FpArc]]:
     return sorted_edges
 
 
-if __name__ == '__main__':
-    inputdata = open("data/FireFly.kicad_pcb").read()
+def get_nets(data: Dict[str, Any]):
+    """
+    get jusy list of nets with their id and name
+    :param data:
+    :return:
+    """
+    nets_data = get_all_dicts_by_key(data, 'net')
+    nets: List[Net] = list()
+    for net in nets:
+        new_net = Net(net_name=net['net'][1].replace('""', ''), net_id=net['net'][0], contact=list(), segments=list())
+    nets.append(new_net)
+    return nets
+
+
+def main(filename):
+    inputdata = open(filename).read()
     data_parse = OneOrMore(nestedExpr()).parseString(inputdata)
     data_list = data_parse.asList()
     data = list_to_dict(data_list[0])
@@ -420,6 +435,7 @@ if __name__ == '__main__':
     layers = get_layers(data)
     edges: List[Union[FpArc, FpLine]] = get_edges(data['kicad_pcb'])
     texts = get_texts(data['kicad_pcb'], 'gr_text')
+    get_nets(data['kicad_pcb'])
     extra_figures: List[Union[FpLine, FpCircle, FpPoly, FpArc]] = get_arcs(data['kicad_pcb'], 'gr_arc')
     extra_figures.extend((get_polys(data['kicad_pcb'], 'gr_poly')))
     extra_figures.extend(get_lines(data['kicad_pcb'], 'gr_line'))
@@ -433,4 +449,11 @@ if __name__ == '__main__':
         extra_module: Module = Module("ExtraSilks", Layer("F.Silks", "user"), [0, 0], False, [extra_ref, extra_value],
                                       extra_figures, list(), list())
         pcb.modules.append(extra_module)
-    create_topor.create_topor(pcb, get_settings())
+    create_topor.create_topor(filename, pcb, get_settings())
+
+
+if __name__ == '__main__':
+    if len(sys.argv) < 2:
+        print("No PCB filename")
+    else:
+        main(sys.argv[1])
