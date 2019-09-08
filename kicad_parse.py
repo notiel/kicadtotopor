@@ -53,7 +53,7 @@ def get_end_point(arc: FpArc)->Coords:
         x = x_c + r * math.cos(a / 180 * math.pi)
         y = y_c + r * math.sin(a / 180 * math.pi)
         a += da
-    return [x, y]
+    return [str(x), str(y)]
 
 
 def list_to_dict(pcb_data: List) -> Dict[str, Any]:
@@ -137,9 +137,10 @@ def convert_to_layers(layer_data: Union[List[str], str])-> List[Layer]:
     return result
 
 
-def create_module(module_dict: Dict[str, Any]) -> Module:
+def create_module(module_dict: Dict[str, Any], nets: List[Net]) -> Module:
     """
     creates PCB Kicad module from data list
+    :param nets: list of nets
     :param module_dict: list with module fields
     :return:
     """
@@ -152,10 +153,12 @@ def create_module(module_dict: Dict[str, Any]) -> Module:
     coords[1] = str(-1*float(coords[1]))
     attr = get_dict_by_key(m_data, 'attr')
     smd: bool = True if (attr and attr['attr'] == 'smd') else False
-    module_texts = get_texts(m_data, 'fp_text')
+    module_texts: List[FpText] = get_texts(m_data, 'fp_text')
     figures: List[Union[FpPoly, FpCircle, FpArc, FpLine]] = get_lines(m_data, 'fp_line')
     figures.extend(get_circles(m_data, 'fp_circle'))
-    pads = get_pads(m_data)
+    pads = get_pads(m_data, nets)
+    ref = [text.text for text in module_texts if text.text_type ==TextType.reference][0]
+    update_nets_with_pads(pads, nets, ref)
     figures.extend(get_polys(m_data, 'fp_poly'))
     figures.extend(get_arcs(m_data, 'fp_arc'))
     return Module(footprint=footprint, layer=layer, coords=coords, smd=smd,
@@ -323,9 +326,10 @@ def get_arcs(m_data: List[Dict[str, Any]], arc_tag: str) -> List[FpArc]:
     return arcs
 
 
-def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
+def get_pads(m_data: List[Dict[str, Any]], nets: List[Net]) -> List[FpPad]:
     """
     gets list of pads for module
+    :param nets:
     :param m_data: dict with module
     :return: list of pads
     """
@@ -363,8 +367,6 @@ def get_pads(m_data: List[Dict[str, Any]]) -> List[FpPad]:
         net_name = get_dict_by_key(fp_pad, 'net')['net'][1] if net_data else ""
         new_pad = FpPad(pad_id=pad_id, smd=smd, drill=drill, pad_type=pad_type, center=pos, size=size,
                         layers=pad_layers, net_id=net_id, net_name=net_name, extra_points=list())
-        if net_data:
-            net = [net for net in nets if net.net_id == net_id]
         if pad_type == PadType.custom:
             pad_data = get_dict_by_key(fp_pad, 'primitives')['primitives']
             for extra_pad in pad_data:
@@ -421,7 +423,8 @@ def get_nets(data: List[Dict[str, Any]]) -> List[Net]:
     nets_data = get_all_dicts_by_key(data, 'net')
     nets: List[Net] = list()
     for net in nets_data:
-        new_net = Net(net_name=net['net'][1].replace('""', ''), net_id=net['net'][0], contacts=list(), segments=list())
+        new_net = Net(net_name=net['net'][1].replace('"', ''), net_id=net['net'][0], contacts=list(),
+                      segments=list(), vias=list())
         nets.append(new_net)
     return nets
 
@@ -437,10 +440,10 @@ def get_net_groups(data: List[Dict[str, Any]], nets: List[Net]) -> List[NetGroup
     groups: List[NetGroup] = list()
     for group in group_data:
         name = group['net_class'][0]
-        clearance = get_dict_by_key(group['net_class'], 'clearance')
-        width = get_dict_by_key(group['net_class'], 'width')
-        via_dia = get_dict_by_key(group['net_class'], 'via_dia')
-        via_drill = get_dict_by_key(group['net_class'], 'via_drill')
+        clearance = get_dict_by_key(group['net_class'], 'clearance')['clearance']
+        width = get_dict_by_key(group['net_class'], 'trace_width')['trace_width']
+        via_dia = get_dict_by_key(group['net_class'], 'via_dia')['via_dia']
+        via_drill = get_dict_by_key(group['net_class'], 'via_drill')['via_drill']
         new_group = NetGroup(name=name, clearance=clearance, trace_width=width, via_dia=via_dia, via_drill=via_drill)
         groups.append(new_group)
         nets_data = get_all_dicts_by_key(group['net_class'], 'add_net')
@@ -451,6 +454,58 @@ def get_net_groups(data: List[Dict[str, Any]], nets: List[Net]) -> List[NetGroup
     return groups
 
 
+def update_nets_with_pads(pads: List[FpPad], nets: List[Net], ref: str):
+    """
+    update net structure
+    :param pads: list of module pads
+    :param net: pcb nets
+    :param ref: reference of module to find pad
+    :return:
+    """
+    for pad in pads:
+        if pad.net_name:
+            net: Net = [net for net in nets if float(net.net_id) == float(pad.net_id)][0]
+            net.contacts.append((ref, pad.pad_id))
+
+def update_nets_with_segments(pcb_data: Dict, nets: List[Net]):
+    """
+    get segments of nets
+    :param pcb_data: data of pcb to get nets
+    :param nets: list of nets to update
+    :return: 
+    """
+    segments = get_all_dicts_by_key(pcb_data, 'segment')
+    for segment in segments:
+        start: Coords = get_dict_by_key(segment['segment'], 'start')['start']
+        end: Coords = get_dict_by_key(segment['segment'], 'end')['end']
+        width: str = get_dict_by_key(segment['segment'], 'width')['width']
+        layer_data: str = get_dict_by_key(segment['segment'], 'layer')['layer']
+        layers: List[Layer] = convert_to_layers(layer_data)
+        new_segment: Segment = Segment(start=start, end=end, width=width, layers=layers)
+        net_id: str = get_dict_by_key(segment['segment'], 'net')['net']
+        for net in nets:
+            if float(net.net_id) == float(net_id):
+                net.segments.append(new_segment)
+
+
+def update_nets_with_vias(pcb_data: List[Dict[str, Any]], nets: List[Net]):
+    """
+    get segments of nets
+    :param pcb_data: data of pcb to get nets
+    :param nets: list of nets to update
+    :return:
+    """
+    vias = get_all_dicts_by_key(pcb_data, 'via')
+    for via in vias:
+        at: Coords = get_dict_by_key(via['via'], 'at')['at']
+        size: str = get_dict_by_key(via['via'], 'size')['size']
+        layer_data: str  = get_dict_by_key(via['via'], 'layers')['layers']
+        layers: List[Layer] = convert_to_layers(layer_data)
+        new_via: Via = Via(center=at, size=size, layers=layers)
+        net_id: str = get_dict_by_key(via['via'], 'net')['net']
+        for net in nets:
+            if float(net.net_id) == float(net_id):
+                net.vias.append(new_via)
 
 
 def main(filename):
@@ -466,13 +521,15 @@ def main(filename):
     texts = get_texts(data['kicad_pcb'], 'gr_text')
     nets = get_nets(data['kicad_pcb'])
     net_groups = get_net_groups(data['kicad_pcb'], nets)
+    update_nets_with_segments(data['kicad_pcb'], nets)
+    update_nets_with_vias(data['kicad_pcb'], nets)
     extra_figures: List[Union[FpLine, FpCircle, FpPoly, FpArc]] = get_arcs(data['kicad_pcb'], 'gr_arc')
     extra_figures.extend((get_polys(data['kicad_pcb'], 'gr_poly')))
     extra_figures.extend(get_lines(data['kicad_pcb'], 'gr_line'))
     extra_figures.extend(get_circles(data['kicad_pcb'], 'gr_circle'))
     pcb = PCB(layers=layers, modules=list(), edge=edges, texts=texts, nets=nets, net_groups=net_groups  )
     for module in get_all_dicts_by_key(data['kicad_pcb'], 'module'):
-        pcb.modules.append(create_module(module))
+        pcb.modules.append(create_module(module, nets))
     if extra_figures:
         extra_ref: FpText = FpText(TextType.reference, "ExtraSilks", Layer("F.SilkS", "user"), [0, 0], 0)
         extra_value: FpText = FpText(TextType.value, "ExtraSilks", Layer("F.SilkS", "user"), [0, 0], 0)

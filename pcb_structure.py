@@ -3,7 +3,7 @@ from typing import Tuple, List, Union
 from enum import Enum
 
 
-Coords = List[float]
+Coords = List[str]
 FpFigure = Union['FpArc', 'FpPoly', 'FpLine', 'FpCircle']
 
 
@@ -32,7 +32,7 @@ class FpText:
     text_type: TextType
     text: str
     layer: Layer
-    coords: List[float]
+    coords: List[str]
     angle: float
 
 
@@ -111,17 +111,26 @@ class NetGroup:
 
 @dataclass
 class Segment:
-    start: float
-    end: float
-    width: float
+    start: Coords
+    end: Coords
+    layers: List[Layer]
+    width: str
+
+@dataclass
+class Via:
+    center: Coords
+    layers: List[Layer]
+    size: str
+
 
 
 @dataclass
 class Net:
     net_id: int
     net_name: str
-    contacts: List[Tuple[Module, int]]
+    contacts: List[Tuple[str, str]]
     segments: List[Segment]
+    vias: List[Via]
     group: str = ""
 
 
