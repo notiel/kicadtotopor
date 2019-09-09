@@ -234,6 +234,23 @@ def create_groups(parent: FstTag, net_groups: List[NetGroup], nets: List[Net]):
             _ = etree.SubElement(net_group_tag, "NetRef", name=net.net_name)
 
 
+def create_viastacks(parent: FstTag, net_groups: List[NetGroup]):
+    """
+    creates stacks of vias
+    :param parent: parent tag
+    :param net_groups: list of net groups for different via rules
+    :return:
+    """
+    viastacks = etree.SubElement(parent, "Viastacks")
+    for group in net_groups:
+        viastack = etree.SubElement(viastacks, "Viastack", name="Via %s" % group.name, holeDiameter=str(group.via_drill))
+        layer_range = etree.SubElement(viastack, 'LayerRange')
+        _ = etree.SubElement(layer_range, "AllLayers")
+        viapads = etree.SubElement(viastack, "ViaPads")
+        via_circle = etree.SubElement(viapads, "PadCircle", diameter=str(group.via_dia))
+        _ = etree.SubElement(via_circle, 'LayerTypeRef', type='Signal')
+
+
 def generate_rules(parent, net_groups: List[NetGroup]):
     """
     generate rules
@@ -271,6 +288,12 @@ def generate_rules(parent, net_groups: List[NetGroup]):
     for group in net_groups:
         net_prop = etree.SubElement(net_props, "NetProperty", flexfix="off", route="on")
         _ = etree.SubElement(net_prop, "NetRef", name=group.name)
+    rules_viastack = etree.SubElement(rules, "RulesViastacksOfNets")
+    viastack_of_nets = etree.SubElement(rules_viastack, "ViastacksOfNets", enabled="on")
+    obj_tag = etree.SubElement(viastack_of_nets, "ObjectsAffected")
+    _ = etree.SubElement(obj_tag, "AllNets")
+    viastacks = etree.SubElement(viastack_of_nets, "Viastacks")
+    _ = etree.SubElement(viastacks, "AllViastacks")
 
 
 def create_connectivity(parent: FstTag, nets: List[Net]):
@@ -281,6 +304,14 @@ def create_connectivity(parent: FstTag, nets: List[Net]):
     :return:
     """
     conn = etree.SubElement(parent, "Connectivity", version="1.3")
+    vias = etree.SubElement(conn, "Vias")
+    for net in nets:
+        for via in net.vias:
+            via_tag = etree.SubElement(vias, "Via")
+            _ = etree.SubElement(via_tag, "ViastackRef", name="Via %s" % net.group)
+            _ = etree.SubElement(via_tag, "NetRef", name=net.net_name)
+            _ = etree.SubElement(via_tag, "Org", x=str(via.center[0]), y=str(via.center[1]))
+
     wires = etree.SubElement(conn, "Wires")
     for net in nets:
         for segment in net.segments:
@@ -308,7 +339,7 @@ def create_topor(filename: str, pcb: PCB, settings: Dict[str, Any]):
     create_textstyles(topor, settings)
     library = etree.SubElement(topor, 'LocalLibrary', version="1.1")
     create_pads(library, pcb)
-
+    create_viastacks(library, pcb.net_groups)
     footprints = etree.SubElement(library, "Footprints")
     for module in pcb.modules:
         ref = [text.text for text in module.texts if text.text_type == TextType.reference][0]

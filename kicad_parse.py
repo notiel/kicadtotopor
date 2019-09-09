@@ -467,6 +467,7 @@ def update_nets_with_pads(pads: List[FpPad], nets: List[Net], ref: str):
             net: Net = [net for net in nets if float(net.net_id) == float(pad.net_id)][0]
             net.contacts.append((ref, pad.pad_id))
 
+
 def update_nets_with_segments(pcb_data: List[Dict[str, Any]], nets: List[Net]):
     """
     get segments of nets
