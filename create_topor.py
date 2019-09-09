@@ -202,6 +202,98 @@ def create_pads(library: FstTag, pcb: PCB):
         create_extra_pads(padstacks, module, ref, used_extra_pads)
 
 
+def create_nets(parent: FstTag, nets: List[Net]):
+    """
+    creates list of nets
+    :param parent: parent topor tag
+    :param nets: lost of pcb nets
+    :return:
+    """
+    netlist = etree.SubElement(parent, "NetList", version='2.0')
+    for net in nets:
+        if net.net_name:
+            net_tag = etree.SubElement(netlist, "Net", name=net.net_name)
+            for pad in net.contacts:
+                _ = etree.SubElement(net_tag, "PinRef", compName=pad[0], pinName=pad[1])
+
+
+def create_groups(parent: FstTag, net_groups: List[NetGroup], nets: List[Net]):
+    """
+    create
+    :param nets: list of nets to get groups
+    :param parent: parent Tag
+    :param net_groups: list of net groups
+    :return:
+    """
+    groups_tag = etree.SubElement(parent, "Groups", version="1.1")
+    net_groups_tag = etree.SubElement(groups_tag, "NetGroups")
+    for group in net_groups:
+        net_group_tag = etree.SubElement(net_groups_tag, "NetGroup", name=group.name)
+        net_list = [net for net in nets if net.group == group.name]
+        for net in net_list:
+            _ = etree.SubElement(net_group_tag, "NetRef", name=net.net_name)
+
+
+def generate_rules(parent, net_groups: List[NetGroup]):
+    """
+    generate rules
+    :param parent: parent tag
+    :param net_groups: list of net rules
+    :return:
+    """
+    rules = etree.SubElement(parent, "Rules", version="2.0")
+    rules_width = etree.SubElement(rules, 'RulesWidthOfWires')
+    width = etree.SubElement(rules_width, "WidthOfWires", enabled="on", widthMin='0.15', widthNom='0.15')
+    _ = etree.SubElement(width, "AllLayers")
+    obj_tag = etree.SubElement(width, 'ObjectsAffected')
+    _ = etree.SubElement(obj_tag, "AllNets")
+    for group in net_groups:
+        width = etree.SubElement(rules_width, "WidthOfWires", enabled="on",
+                                 widthMin=str(group.trace_width), widthNom=str(group.trace_width))
+        _ = etree.SubElement(width, "AllLayers")
+        obj_tag = etree.SubElement(width, 'ObjectsAffected')
+        _ = etree.SubElement(obj_tag, "NetGroupRef", name=group.name)
+
+    rules_clr = etree.SubElement(rules, "RulesClearancesNetToNet")
+    clr_tag = etree.SubElement(rules_clr, "ClearanceNetToNet", enabled="on", clrnMin='0.15', clrnNom='0.15')
+    _ = etree.SubElement(clr_tag, "AllLayers")
+    obj_tag = etree.SubElement(clr_tag, 'ObjectsAffected')
+    _ = etree.SubElement(obj_tag, "AllNets")
+    _ = etree.SubElement(obj_tag, "AllNets")
+    for group in net_groups:
+        clr_tag = etree.SubElement(rules_clr, "ClearanceNetToNet", enabled="on",
+                                   clrnMin=str(group.clearance), clrnNom=str(group.clearance))
+        _ = etree.SubElement(clr_tag, "AllLayers")
+        obj_tag = etree.SubElement(clr_tag, 'ObjectsAffected')
+        _ = etree.SubElement(obj_tag, "NetGroupRef", name=group.name)
+        _ = etree.SubElement(obj_tag, "AllNets")
+    net_props = etree.SubElement(rules, "NetProperties")
+    for group in net_groups:
+        net_prop = etree.SubElement(net_props, "NetProperty", flexfix="off", route="on")
+        _ = etree.SubElement(net_prop, "NetRef", name=group.name)
+
+
+def create_connectivity(parent: FstTag, nets: List[Net]):
+    """
+    creates segments of wires
+    :param parent: parent tag
+    :param nets: list of nets
+    :return:
+    """
+    conn = etree.SubElement(parent, "Connectivity", version="1.3")
+    wires = etree.SubElement(conn, "Wires")
+    for net in nets:
+        for segment in net.segments:
+            for layer in segment.layers:
+                wire = etree.SubElement(wires, "Wire")
+                _ = etree.SubElement(wire, "LayerRef", name=layer.name)
+                _ = etree.SubElement(wire, "NetRef", name=net.net_name)
+                subwire = etree.SubElement(wire, "Subwire", fixed='on', width=str(segment.width))
+                _ = etree.SubElement(subwire, "Start", x=str(segment.start[0]), y=str(segment.start[1]))
+                track = etree.SubElement(subwire, "TrackLine")
+                _ = etree.SubElement(track, "End", x=str(segment.end[0]), y=str(segment.end[1]))
+
+
 def create_topor(filename: str, pcb: PCB, settings: Dict[str, Any]):
     """
     creates pcb topor file
@@ -224,11 +316,11 @@ def create_topor(filename: str, pcb: PCB, settings: Dict[str, Any]):
         pads = etree.SubElement(footprint, "Pads")
         for pad in module.pads:
             angle = str(pad.center.rot) if (pad.pad_type != PadType.custom and int(pad.center.rot) % 90 == 0) else '0'
-            pad_tag = etree.SubElement(pads, "Pad", padNum=str(module.pads.index(pad)), name=pad.pad_id, angle=angle)
+            pad_tag = etree.SubElement(pads, "Pad", padNum=str(module.pads.index(pad)+1), name=pad.pad_id, angle=angle)
             _ = etree.SubElement(pad_tag, "PadstackRef", name=ref+' ' + pad.pad_id)
             _ = etree.SubElement(pad_tag, "Org", x=str(pad.center.pos[0]), y=str(pad.center.pos[1]))
         for pad in module.extrapads:
-            pad_tag = etree.SubElement(pads, "Pad", padNum=str(module.extrapads.index(pad)+len(module.pads)),
+            pad_tag = etree.SubElement(pads, "Pad", padNum=str(module.extrapads.index(pad)+len(module.pads)+1),
                                        name=str(module.extrapads.index(pad)+len(module.pads)))
             _ = etree.SubElement(pad_tag, "PadstackRef", name=pad)
             _ = etree.SubElement(pad_tag, "Org", x='0', y='0')
@@ -245,7 +337,7 @@ def create_topor(filename: str, pcb: PCB, settings: Dict[str, Any]):
         component = etree.SubElement(components, 'Component', name=ref)
         pins = etree.SubElement(component, 'Pins')
         for pad in module.pads:
-            _ = etree.SubElement(pins, "Pin", pinNum=str(module.pads.index(pad)), name=pad.pad_id,
+            _ = etree.SubElement(pins, "Pin", pinNum=str(module.pads.index(pad)+1), name=pad.pad_id,
                                  pinSymName=pad.pad_id, pinEqual="0", gate="-1", gateEqual="0")
 
     packages = etree.SubElement(library, "Packages")
@@ -254,7 +346,8 @@ def create_topor(filename: str, pcb: PCB, settings: Dict[str, Any]):
         package = etree.SubElement(packages, 'Package')
         _ = etree.SubElement(package, 'ComponentRef', name=ref)
         _ = etree.SubElement(package, 'FootprintRef', name=module.footprint + ' ' + ref)
-        _ = etree.SubElement(package, 'Pinpack', pinNum="1", padNum="1")
+        for i in range(1, len(module.pads)+1):
+            _ = etree.SubElement(package, 'Pinpack', pinNum="%i" % i, padNum="%i" % i)
 
     constr = etree.SubElement(topor, "Constructive", version='1.2')
     board = etree.SubElement(constr, 'BoardOutline')
@@ -286,7 +379,7 @@ def create_topor(filename: str, pcb: PCB, settings: Dict[str, Any]):
         while name in used_names:
             name += " "
         used_names.append(name)
-        comp_inst = etree.SubElement(components, 'CompInstance', name=name,
+        comp_inst = etree.SubElement(components, 'CompInstance', name=ref,
                                      uniqueId=''.join(random.choice(string.ascii_letters) for x in range(7)),
                                      side='Top' if 'F.' in module.layer.name else 'Bottom',
                                      angle=str(module.coords[2]) if len(module.coords) > 2 else '0',
@@ -315,5 +408,9 @@ def create_topor(filename: str, pcb: PCB, settings: Dict[str, Any]):
         _ = etree.SubElement(label, "TextStyleRef", name="Default")
         _ = etree.SubElement(label, 'Org', x=str(ref_coords[0]), y=str(ref_coords[1]))
 
+    create_nets(topor, pcb.nets)
+    create_groups(topor, pcb.net_groups, pcb.nets)
+    generate_rules(topor, pcb.net_groups)
+    create_connectivity(topor, pcb.nets)
     xml_tree = etree.ElementTree(topor)
     xml_tree.write(filename + '.fst', xml_declaration=True, encoding="UTF-8", pretty_print=True)

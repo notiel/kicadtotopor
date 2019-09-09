@@ -116,12 +116,12 @@ class Segment:
     layers: List[Layer]
     width: str
 
+
 @dataclass
 class Via:
     center: Coords
     layers: List[Layer]
     size: str
-
 
 
 @dataclass

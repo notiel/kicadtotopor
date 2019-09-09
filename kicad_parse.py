@@ -439,7 +439,7 @@ def get_net_groups(data: List[Dict[str, Any]], nets: List[Net]) -> List[NetGroup
     group_data = get_all_dicts_by_key(data, 'net_class')
     groups: List[NetGroup] = list()
     for group in group_data:
-        name = group['net_class'][0]
+        name = group['net_class'][0].replace('"', '')
         clearance = get_dict_by_key(group['net_class'], 'clearance')['clearance']
         width = get_dict_by_key(group['net_class'], 'trace_width')['trace_width']
         via_dia = get_dict_by_key(group['net_class'], 'via_dia')['via_dia']
@@ -467,7 +467,7 @@ def update_nets_with_pads(pads: List[FpPad], nets: List[Net], ref: str):
             net: Net = [net for net in nets if float(net.net_id) == float(pad.net_id)][0]
             net.contacts.append((ref, pad.pad_id))
 
-def update_nets_with_segments(pcb_data: Dict, nets: List[Net]):
+def update_nets_with_segments(pcb_data: List[Dict[str, Any]], nets: List[Net]):
     """
     get segments of nets
     :param pcb_data: data of pcb to get nets
@@ -477,7 +477,9 @@ def update_nets_with_segments(pcb_data: Dict, nets: List[Net]):
     segments = get_all_dicts_by_key(pcb_data, 'segment')
     for segment in segments:
         start: Coords = get_dict_by_key(segment['segment'], 'start')['start']
+        start[1] = str(-1*float(start[1]))
         end: Coords = get_dict_by_key(segment['segment'], 'end')['end']
+        end[1] = str(-1 * float(end[1]))
         width: str = get_dict_by_key(segment['segment'], 'width')['width']
         layer_data: str = get_dict_by_key(segment['segment'], 'layer')['layer']
         layers: List[Layer] = convert_to_layers(layer_data)
@@ -498,6 +500,7 @@ def update_nets_with_vias(pcb_data: List[Dict[str, Any]], nets: List[Net]):
     vias = get_all_dicts_by_key(pcb_data, 'via')
     for via in vias:
         at: Coords = get_dict_by_key(via['via'], 'at')['at']
+        at[1] = str(-1*float(at[1]))
         size: str = get_dict_by_key(via['via'], 'size')['size']
         layer_data: str  = get_dict_by_key(via['via'], 'layers')['layers']
         layers: List[Layer] = convert_to_layers(layer_data)
